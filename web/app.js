@@ -3283,8 +3283,8 @@ function renderAniimoSummary(plan) {
         }
         const stack = dots.length ? `<div class="ability-stack">${dots.join('')}</div>` : '';
         return `<div class="ability-col" style="--ability:${a.color}">
-            <div class="ability-cell${zero ? ' zero' : ''}" title="${a.name}: ${a.about}">
-                <span class="ability-count">${n}</span><span class="ability-name">${a.name}</span>
+            <div class="ability-cell${zero ? ' zero' : ''}" title="${zhAbility(a.name)}: ${a.about}">
+                <span class="ability-count">${n}</span><span class="ability-name">${zhAbility(a.name)}</span>
             </div>${stack}</div>`;
     }).join('');
     container.innerHTML = `
@@ -3769,7 +3769,7 @@ function updateRateDisplay(pickUnit = false) {
     if (!rows) {
         if (select.closest('#priority-rates')) rateLine.appendChild(select);
         const label = CURRENCY_LABELS[lastPlan.currency] || lastPlan.currency;
-        const points = lastPlan.season_points > 1e-12 ? ` + ${formatRate(lastPlan.season_points * multiplier)} ${SEASON.points}` : '';
+        const points = lastPlan.season_points > 1e-12 ? ` + ${formatRate(lastPlan.season_points * multiplier)} ${zhItem(SEASON.points)}` : '';
         document.getElementById('plan-rate').textContent = `${formatRate(lastPlan.rate_per_second * multiplier)} ${label}${points}${suffix}`;
         document.getElementById('rate-label').textContent = '你的產量';
         rateLine.style.display = '';
