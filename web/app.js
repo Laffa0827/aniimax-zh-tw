@@ -6,6 +6,7 @@ import {
     LEVEL_UP_COSTS, LEVEL_UP_CHAINS, SPECIAL_RECIPES, SEASON, ANIIPOD_TIERS, PERSONALITY_PAIRS, personalityLetter, opposedPersonality,
 } from './facility-config.js?v=20261004-4';
 import { createShareUrl, readShareHash, urlWithoutShare } from './share-config.js?v=20261004-4';
+import { generatorLevelForRv, generatorLabel } from './electric-config.js?v=20261004-4';
 import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhJob, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js?v=20261004-4';
 
 let wasmReady = false;
