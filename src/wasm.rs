@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::electric::{electric_compatible, electric_require, ElectricConfig};
 use crate::models::{FacilityCounts, ModuleLevels, ProductionEfficiency, ProductionItem};
 use crate::optimizer::{
     calculate_efficiencies, calculate_energy_efficiencies, find_best_production_path,
@@ -692,6 +693,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_generator_level() -> u8 {
+    1
+}
+
 /// JavaScript-friendly input for the plan solver; everything needed to know the best achievable
 /// rate and facility plan, with no goal amount (see [`JsGoalInput`] for that).
 #[derive(Debug, Clone, Deserialize)]
@@ -751,6 +756,17 @@ pub struct JsPlanInput {
     /// `"season_points"` (see [`crate::models::SEASON_POINTS`]).
     #[serde(default)]
     pub season: bool,
+    /// RV level used to gate the Crackle Generator system. E-mode becomes available at RV12.
+    #[serde(default)]
+    pub home_level: u32,
+    /// Whether Crackle Generator E-mode may be used. When enabled, the exact planner can assign
+    /// whole compatible facility units to the 120% boost band, subject to the shared generator
+    /// threshold.
+    #[serde(default)]
+    pub electric_enabled: bool,
+    /// Crackle Generator level. RV12-13=1, RV14-15=2, RV16-17=3, RV18-19=4, RV20+=5.
+    #[serde(default = "default_generator_level")]
+    pub generator_level: u8,
 }
 
 /// The player's Aniimo, and what the page knows of the facilities they work (see
@@ -799,6 +815,11 @@ impl JsRoster {
 }
 
 impl JsPlanInput {
+    fn electric_config(&self) -> Option<ElectricConfig> {
+        (self.electric_enabled && self.home_level >= 12)
+            .then(|| ElectricConfig::new(self.generator_level))
+    }
+
     /// Builds a [`FacilityCounts`] from the `facilities` map.
     fn facility_counts(&self) -> FacilityCounts {
         let mut fc = FacilityCounts::new();
@@ -1215,6 +1236,22 @@ pub struct JsProductionPlan {
     /// building kind a member staffs.
     #[serde(default)]
     pub staffing: Vec<(String, usize, f64)>,
+    /// Shared Crackle grid summary for the electrical plan.
+    #[serde(default)]
+    pub electric_enabled: bool,
+    #[serde(default)]
+    pub electric_generator_level: u8,
+    #[serde(default)]
+    pub electric_generator_capacity: f64,
+    #[serde(default)]
+    pub electric_boost_threshold: f64,
+    #[serde(default)]
+    pub electric_demand: f64,
+    #[serde(default)]
+    pub electric_efficiency: f64,
+    /// `(facility, recipe, powered_units, power_draw)` for the whole units placed in E-mode.
+    #[serde(default)]
+    pub electric_units: Vec<(String, String, u32, f64)>,
 }
 
 /// What a plan makes of one priority.
@@ -1277,6 +1314,13 @@ fn empty_production_plan(success: bool, error: Option<String>) -> JsProductionPl
         priorities: vec![],
         season_points: None,
         staffing: Vec::new(),
+        electric_enabled: false,
+        electric_generator_level: 0,
+        electric_generator_capacity: 0.0,
+        electric_boost_threshold: 0.0,
+        electric_demand: 0.0,
+        electric_efficiency: 1.0,
+        electric_units: Vec::new(),
     }
 }
 
@@ -1353,12 +1397,13 @@ pub fn exact_byproduct_problems(input_json: &str) -> String {
     let problems: Vec<serde_json::Value> = crate::exact::byproducts(&prepared.items)
         .iter()
         .map(|resource| {
-            let problem = crate::exact::write_lp(
+            let problem = crate::exact::write_lp_with_power(
                 &prepared.items,
                 &prepared.input.currency,
                 &prepared.facility_counts,
                 &prepared.module_levels,
                 crate::exact::Goal::MostOf(resource),
+                prepared.input.electric_config().as_ref(),
             );
             serde_json::json!({ "resource": resource, "lp": problem.lp, "variables": problem.variables, "tiebreak": problem.tiebreak })
         })
@@ -1374,12 +1419,13 @@ pub fn exact_byproduct_problems(input_json: &str) -> String {
 pub fn exact_priority_problem(input_json: &str, stage_json: &str, target: &str) -> String {
     let stage: JsStage = serde_json::from_str(stage_json).unwrap_or_default();
     let lp = match PreparedInput::from_json(input_json) {
-        Ok(prepared) => crate::exact::write_lp(
+        Ok(prepared) => crate::exact::write_lp_with_power(
             &prepared.items,
             target,
             &prepared.facility_counts,
             &prepared.module_levels,
             crate::exact::Goal::Earn { floors: &stage.floors },
+            prepared.input.electric_config().as_ref(),
         ),
         Err(_) => Default::default(),
     };
@@ -1394,12 +1440,13 @@ pub fn exact_priority_problem(input_json: &str, stage_json: &str, target: &str) 
 pub fn exact_level_up_problem(input_json: &str) -> String {
     let lp = match PreparedInput::from_json(input_json) {
         Ok(prepared) => match &prepared.input.level_up {
-            Some(level_up) if prepared.input.currency == "coins" && !level_up.ready() => crate::exact::write_lp(
+            Some(level_up) if prepared.input.currency == "coins" && !level_up.ready() => crate::exact::write_lp_with_power(
                 &prepared.items,
                 &prepared.input.currency,
                 &prepared.facility_counts,
                 &prepared.module_levels,
                 crate::exact::Goal::LevelUp(level_up),
+                prepared.input.electric_config().as_ref(),
             ),
             _ => Default::default(),
         },
@@ -1447,12 +1494,13 @@ impl JsStage {
 pub fn exact_problem(input_json: &str, stage_json: &str) -> String {
     let stage: JsStage = serde_json::from_str(stage_json).unwrap_or_default();
     let lp = match PreparedInput::from_json(input_json) {
-        Ok(prepared) if !prepared.input.currency.is_empty() => crate::exact::write_lp(
+        Ok(prepared) if !prepared.input.currency.is_empty() => crate::exact::write_lp_with_power(
             &prepared.items,
             &prepared.input.currency,
             &prepared.facility_counts,
             &prepared.module_levels,
             stage.goal(&prepared.input),
+            prepared.input.electric_config().as_ref(),
         ),
         _ => Default::default(),
     };
@@ -1491,7 +1539,7 @@ pub fn exact_plan(input_json: &str, stage_json: &str, solution_json: &str) -> St
         crate::exact::Goal::EarnWhileLevelingUp(level_up, _) | crate::exact::Goal::StockUp(level_up, ..) => Some(level_up),
         _ => None,
     };
-    let Some(exact) = crate::exact::plan_from_values(
+    let Some(exact) = crate::exact::plan_from_values_with_power(
         &prepared.items,
         &currency,
         &prepared.facility_counts,
@@ -1500,6 +1548,7 @@ pub fn exact_plan(input_json: &str, stage_json: &str, solution_json: &str) -> St
         &result.values,
         result.proven,
         result.bound,
+        prepared.input.electric_config().as_ref(),
     ) else {
         return no_plan();
     };
@@ -1509,7 +1558,7 @@ pub fn exact_plan(input_json: &str, stage_json: &str, solution_json: &str) -> St
     // Independent re-check of every limit before trusting the plan; the caller falls back to the
     // heuristic planner if this ever fails.
     if let Err(problem) =
-        crate::exact::check_plan(&exact, &prepared.items, &currency, &prepared.facility_counts, &prepared.module_levels, level_up)
+        crate::exact::check_plan_with_power(&exact, &prepared.items, &currency, &prepared.facility_counts, &prepared.module_levels, level_up, prepared.input.electric_config().as_ref())
     {
         return serde_json::to_string(&empty_production_plan(false, Some(format!("Exact plan failed its check: {problem}"))))
             .unwrap_or_default();
@@ -1520,6 +1569,21 @@ pub fn exact_plan(input_json: &str, stage_json: &str, solution_json: &str) -> St
     let mut js = prepared.to_js(plan, Some(proof));
     js.level_up = report;
     js.staffing = exact.staffing.clone();
+    if let Some(power) = prepared.input.electric_config() {
+        let electric_units: Vec<(String, String, u32, f64)> = exact.electric_units.iter().filter_map(|(name, &units)| {
+            let item = prepared.items.iter().find(|i| i.name == *name)?;
+            let require = electric_require(&item.facility, item.facility_level)?;
+            Some((item.facility.clone(), item.name.clone(), units, units as f64 * require))
+        }).collect();
+        let demand: f64 = electric_units.iter().map(|(_, _, _, p)| *p).sum();
+        js.electric_enabled = true;
+        js.electric_generator_level = power.generator_level;
+        js.electric_generator_capacity = power.capacity();
+        js.electric_boost_threshold = power.boost_threshold();
+        js.electric_demand = demand;
+        js.electric_efficiency = power.efficiency(demand);
+        js.electric_units = electric_units;
+    }
     if prepared.input.season {
         js.season_points = Some(crate::exact::target_rate(&exact, &prepared.items, crate::models::SEASON_POINTS));
     }

@@ -42,6 +42,7 @@ use crate::coverage::{
     facility_footprint, mode_temperature, single_building_options, temperature_mode, CoverageOption,
     building_size, pair_options_over_offsets, Offset, PairOption, PairSizes, Zone, ENVIRONMENT_GATED_FACILITIES,
 };
+use crate::electric::{electric_compatible, electric_require, ElectricConfig};
 use crate::models::{byproduct_item, FacilityCounts, ModuleLevels, ProductionItem};
 
 /// Whether plans may place two environment buildings to overlap, for the zone their temperatures
@@ -125,6 +126,8 @@ pub struct ExactPlan {
     pub recipe_rates: BTreeMap<String, f64>,
     /// Whole units set to each recipe that runs.
     pub units: BTreeMap<String, u32>,
+    /// Whole facility units assigned to 120% Crackle E-mode.
+    pub electric_units: BTreeMap<String, u32>,
     /// Units/sec sold of each item.
     pub sold: BTreeMap<String, f64>,
     pub environment: Vec<ExactEnvironment>,
@@ -220,6 +223,12 @@ fn made_item<'a>(name: &'a str, all: &HashMap<&str, &ProductionItem>) -> &'a str
 enum VarKind<'a> {
     Rate(&'a ProductionItem),
     Units(&'a ProductionItem),
+    /// Whole facility units assigned to Crackle Generator E-mode.
+    ElectricUnits(&'a ProductionItem),
+    /// Whole E-mode units currently inside the 120% boost band.
+    ElectricBoostUnits(&'a ProductionItem),
+    /// Global binary: 1 when the shared Crackle grid is in its 120% boost band.
+    ElectricBoostBand,
     Sold(&'a str),
     Pace,
     /// Made beyond what the level-up needs, of one of its costs.
@@ -310,6 +319,7 @@ fn build_model<'a>(
     facility_counts: &FacilityCounts,
     module_levels: &ModuleLevels,
     goal: Goal,
+    electric: Option<&ElectricConfig>,
 ) -> Model<'a> {
     let all: HashMap<&str, &ProductionItem> = items.iter().map(|i| (i.name.as_str(), i)).collect();
     let recipes: Vec<&ProductionItem> = items
@@ -338,10 +348,27 @@ fn build_model<'a>(
     // Recipe rates and units.
     let mut rate_of: Vec<(&ProductionItem, usize)> = Vec::new();
     let mut units_of: Vec<(&ProductionItem, usize)> = Vec::new();
+    let mut electric_vars: HashMap<String, (usize, usize)> = HashMap::new();
     for &recipe in &recipes {
         let rate = model.add(-seed_cost(recipe), (0.0, f64::INFINITY), false, VarKind::Rate(recipe));
         let max = facility_counts.get_count(&recipe.facility) as f64;
         let units = model.add(0.0, (0.0, max), !takes_turns(recipe), VarKind::Units(recipe));
+
+        // E-mode is a shared-grid decision. Powered units may use the full generator capacity;
+        // only the subset inside the boost threshold receives the extra 20% throughput.
+        if let Some(power) = electric.filter(|p| p.enabled && !takes_turns(recipe)) {
+            if electric_compatible(&recipe.facility) && electric_require(&recipe.facility, recipe.facility_level).is_some() {
+                let powered = model.add(0.0, (0.0, max), true, VarKind::ElectricUnits(recipe));
+                let boosted = model.add(0.0, (0.0, max), true, VarKind::ElectricBoostUnits(recipe));
+                electric_vars.insert(recipe.name.clone(), (powered, boosted));
+                model.constrain(vec![(powered, 1.0), (units, -1.0)], ComparisonOp::Le, 0.0);
+                model.constrain(vec![(boosted, 1.0), (powered, -1.0)], ComparisonOp::Le, 0.0);
+                model.constrain(vec![(rate, recipe.production_time), (units, -1.0), (boosted, -0.2)], ComparisonOp::Le, 0.0);
+                rate_of.push((recipe, rate));
+                units_of.push((recipe, units));
+                continue;
+            }
+        }
         model.constrain(vec![(rate, recipe.production_time), (units, -1.0)], ComparisonOp::Le, 0.0);
         rate_of.push((recipe, rate));
         units_of.push((recipe, units));
@@ -451,6 +478,51 @@ fn build_model<'a>(
         for level in levels {
             let terms: Vec<(usize, f64)> = entries.iter().filter(|(l, _)| *l >= level).map(|(_, v)| (*v, 1.0)).collect();
             model.constrain(terms, ComparisonOp::Le, facility_counts.capacity_at_level(facility, level) as f64);
+        }
+    }
+
+    // Shared Crackle grid: every powered unit contributes its full electricRequire.
+    // Total E-mode demand may use the full generator capacity. Only the subset inside the
+    // boost threshold receives the extra 20% throughput.
+    if let Some(power) = electric.filter(|p| p.enabled) {
+        let grid_boost = model.add(0.0, (0.0, 1.0), true, VarKind::ElectricBoostBand);
+        let mut demand_terms = Vec::new();
+        let mut boost_terms = Vec::new();
+        let mut powered_groups: Vec<(usize, usize, f64)> = Vec::new();
+        for (v, kind) in model.kinds.iter().enumerate() {
+            let recipe = match kind {
+                VarKind::ElectricUnits(recipe) => *recipe,
+                _ => continue,
+            };
+            if let Some(require) = electric_require(&recipe.facility, recipe.facility_level) {
+                demand_terms.push((v, require));
+                if let Some((boost_v, _)) = model.kinds.iter().enumerate().find(|(_, k)| matches!(k, VarKind::ElectricBoostUnits(r) if r.name == recipe.name)) {
+                    boost_terms.push((boost_v, require));
+                    let max = facility_counts.get_count(&recipe.facility) as f64;
+                    powered_groups.push((v, boost_v, max));
+                }
+            }
+        }
+        if !demand_terms.is_empty() {
+            // The whole E-mode network shares one efficiency state. It may use the full
+            // Generator capacity. If total demand is at/below the boost threshold, ALL
+            // powered units receive 120%; otherwise ALL powered units run at 100%.
+            model.constrain(demand_terms.clone(), ComparisonOp::Le, power.capacity());
+
+            // grid_boost = 1 means the complete powered grid must fit inside the 120% threshold.
+            // If grid_boost = 0, the threshold is relaxed by a big-M term.
+            let big_m = power.capacity();
+            let mut threshold_terms = demand_terms.clone();
+            threshold_terms.push((grid_boost, big_m));
+            model.constrain(threshold_terms, ComparisonOp::Le, power.boost_threshold() + big_m);
+
+            // When boost is ON, boosted == powered for every recipe. When boost is OFF,
+            // boosted == 0. This prevents a mixed 120%/100% grid.
+            for (powered, boosted, max) in powered_groups {
+                model.constrain(vec![(boosted, 1.0), (powered, -1.0)], ComparisonOp::Le, 0.0);
+                model.constrain(vec![(boosted, 1.0), (grid_boost, -max)], ComparisonOp::Le, 0.0);
+                model.constrain(vec![(boosted, 1.0), (powered, -1.0), (grid_boost, max)], ComparisonOp::Ge, 0.0);
+            }
         }
     }
 
@@ -629,7 +701,16 @@ fn build_model<'a>(
             if crew.residents.contains(&recipe.facility) {
                 busy[member].push((units, 1.0));
             } else {
-                busy[member].push((rate, recipe.production_time));
+                // E-mode replaces the worker time for powered units. A boosted unit contributes
+                // 1.2 units of processor capacity, while a non-boosted powered unit contributes
+                // 1.0; only the remaining workload needs an Aniimo.
+                if let Some(&(powered, boosted)) = electric_vars.get(&recipe.name) {
+                    busy[member].push((rate, recipe.production_time));
+                    busy[member].push((powered, -1.0));
+                    busy[member].push((boosted, -0.2));
+                } else {
+                    busy[member].push((rate, recipe.production_time));
+                }
             }
         }
         // The environment buildings of each kind the plan sets up; a pair counts each of its two.
@@ -729,7 +810,7 @@ pub fn solve_exact(
     time_limit: Option<Duration>,
     start: Option<&crate::models::ProductionPlan>,
 ) -> Option<ExactPlan> {
-    let model = build_model(items, currency, facility_counts, module_levels, goal);
+    let model = build_model(items, currency, facility_counts, module_levels, goal, None);
     let began = Instant::now();
     let out_of_time = || time_limit.is_some_and(|limit| began.elapsed() >= limit);
     let mut nodes = 0u32;
@@ -742,6 +823,9 @@ pub fn solve_exact(
             if model.integer[i] && !is_integral(v) {
                 let label = match kind {
                     VarKind::Units(r) => format!("units {} ({})", r.name, r.facility),
+                    VarKind::ElectricUnits(r) => format!("electric units {} ({})", r.name, r.facility),
+                    VarKind::ElectricBoostUnits(r) => format!("electric boost units {} ({})", r.name, r.facility),
+                    VarKind::ElectricBoostBand => "electric boost band".to_string(),
                     VarKind::Environment { building, mode, option, .. } => format!("env {building} {mode} {:?}", option.counts),
                     VarKind::EnvironmentPair { buildings, modes, option, .. } => {
                         format!("env pair {}+{} {}+{} at {}", buildings.0, buildings.1, modes.0, modes.1, option.offset)
@@ -920,13 +1004,14 @@ pub fn solve_relaxed(
     facility_counts: &FacilityCounts,
     module_levels: &ModuleLevels,
 ) -> Option<f64> {
-    let model = build_model(items, currency, facility_counts, module_levels, Goal::Earn { floors: &[] });
+    let model = build_model(items, currency, facility_counts, module_levels, Goal::Earn { floors: &[] }, None);
     model.relax(&model.bounds).map(|(value, _)| value)
 }
 
 fn plan_from(model: &Model, value: f64, upper_bound: f64, proven_optimal: bool, nodes: u32, values: &[f64], _root: f64) -> ExactPlan {
     let mut recipe_rates = BTreeMap::new();
     let mut units = BTreeMap::new();
+    let mut electric_units = BTreeMap::new();
     let mut sold = BTreeMap::new();
     let mut environment = Vec::new();
     let mut pairs: Vec<ExactPair> = Vec::new();
@@ -946,6 +1031,10 @@ fn plan_from(model: &Model, value: f64, upper_bound: f64, proven_optimal: bool, 
             VarKind::Units(recipe) if v > 0.5 => {
                 units.insert(recipe.name.clone(), v.round() as u32);
             }
+            VarKind::ElectricUnits(recipe) if v > 0.5 => {
+                electric_units.insert(recipe.name.clone(), v.round() as u32);
+            }
+            VarKind::ElectricBoostUnits(_) | VarKind::ElectricBoostBand => {}
             VarKind::Sold(name) if v > 1e-9 => {
                 sold.insert(name.to_string(), v);
             }
@@ -995,6 +1084,7 @@ fn plan_from(model: &Model, value: f64, upper_bound: f64, proven_optimal: bool, 
         nodes,
         recipe_rates,
         units,
+        electric_units,
         sold,
         environment,
         pairs,
@@ -1014,6 +1104,18 @@ pub fn check_plan(
     module_levels: &ModuleLevels,
     level_up: Option<&LevelUp>,
 ) -> Result<f64, String> {
+    check_plan_with_power(plan, items, currency, facility_counts, module_levels, level_up, None)
+}
+
+pub fn check_plan_with_power(
+    plan: &ExactPlan,
+    items: &[ProductionItem],
+    currency: &str,
+    facility_counts: &FacilityCounts,
+    module_levels: &ModuleLevels,
+    level_up: Option<&LevelUp>,
+    electric: Option<&ElectricConfig>,
+) -> Result<f64, String> {
     const TOLERANCE: f64 = 1e-6;
     let all: HashMap<&str, &ProductionItem> = items.iter().map(|i| (i.name.as_str(), i)).collect();
     let mut earned = 0.0;
@@ -1032,8 +1134,16 @@ pub fn check_plan(
             }
         }
         let units = plan.units.get(name).copied().unwrap_or(0);
-        if rate * recipe.production_time > units as f64 + TOLERANCE {
-            return Err(format!("{name} runs {rate}/s but has {units} units at {}s each", recipe.production_time));
+        let powered = plan.electric_units.get(name).copied().unwrap_or(0);
+        if powered > units {
+            return Err(format!("{name} has {powered} powered units but only {units} total units"));
+        }
+        if powered > 0 && electric.is_none_or(|p| !p.enabled) {
+            return Err(format!("{name} uses E-mode while electricity is disabled"));
+        }
+        let capacity = units as f64 + powered as f64 * 0.2;
+        if rate * recipe.production_time > capacity + TOLERANCE {
+            return Err(format!("{name} runs {rate}/s but has {units} units ({powered} powered) at {}s each", recipe.production_time));
         }
         let in_use = if takes_turns(recipe) { rate * recipe.production_time } else { units as f64 };
         units_at.entry(recipe.facility.as_str()).or_default().push((recipe.facility_level, in_use));
@@ -1089,6 +1199,18 @@ pub fn check_plan(
             }
         }
     }
+    if let Some(power) = electric.filter(|p| p.enabled) {
+        let demand: f64 = plan.electric_units.iter().filter_map(|(name, &units)| {
+            let recipe = all.get(name.as_str())?;
+            Some(units as f64 * electric_require(&recipe.facility, recipe.facility_level)?)
+        }).sum();
+        if demand > power.capacity() + TOLERANCE {
+            return Err(format!("Crackle E-mode demand {demand:.3} exceeds generator capacity {}", power.capacity()));
+        }
+    } else if !plan.electric_units.is_empty() {
+        return Err("plan contains powered units without an enabled Crackle Generator".to_string());
+    }
+
     let mut buildings_used: HashMap<&str, u32> = HashMap::new();
     let mut covered: HashMap<(&str, &str), u32> = HashMap::new();
     for env in &plan.environment {
@@ -1191,7 +1313,18 @@ pub fn write_lp(
     module_levels: &ModuleLevels,
     goal: Goal,
 ) -> LpProblem {
-    let model = build_model(items, currency, facility_counts, module_levels, goal);
+    write_lp_with_power(items, currency, facility_counts, module_levels, goal, None)
+}
+
+pub fn write_lp_with_power(
+    items: &[ProductionItem],
+    currency: &str,
+    facility_counts: &FacilityCounts,
+    module_levels: &ModuleLevels,
+    goal: Goal,
+    electric: Option<&ElectricConfig>,
+) -> LpProblem {
+    let model = build_model(items, currency, facility_counts, module_levels, goal, electric);
     let term = |c: f64, v: usize| format!("{} {} x{v}", if c < 0.0 { "-" } else { "+" }, c.abs());
     let mut out = String::from("Maximize\n obj:");
     for (v, &c) in model.objective.iter().enumerate() {
@@ -1243,7 +1376,21 @@ pub fn plan_from_values(
     proven_optimal: bool,
     upper_bound: f64,
 ) -> Option<ExactPlan> {
-    let model = build_model(items, currency, facility_counts, module_levels, goal);
+    plan_from_values_with_power(items, currency, facility_counts, module_levels, goal, values, proven_optimal, upper_bound, None)
+}
+
+pub fn plan_from_values_with_power(
+    items: &[ProductionItem],
+    currency: &str,
+    facility_counts: &FacilityCounts,
+    module_levels: &ModuleLevels,
+    goal: Goal,
+    values: &[f64],
+    proven_optimal: bool,
+    upper_bound: f64,
+    electric: Option<&ElectricConfig>,
+) -> Option<ExactPlan> {
+    let model = build_model(items, currency, facility_counts, module_levels, goal, electric);
     if values.len() != model.objective.len() {
         return None;
     }

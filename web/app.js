@@ -4,9 +4,9 @@ import {
     FACILITIES, FACILITY_CATEGORIES, FACILITY_CATEGORY_BY_NAME, FACILITY_FOOTPRINTS, HOMELAND_PLOTS, HOMELAND_PLOT_SIZE,
     MAX_HOME_LEVEL, ANIIMO_MAX, simpleSetup,
     LEVEL_UP_COSTS, LEVEL_UP_CHAINS, SPECIAL_RECIPES, SEASON, ANIIPOD_TIERS, PERSONALITY_PAIRS, personalityLetter, opposedPersonality,
-} from './facility-config.js?v=20261004-3';
-import { createShareUrl, readShareHash, urlWithoutShare } from './share-config.js?v=20261004-3';
-import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhJob, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js?v=20261004-3';
+} from './facility-config.js?v=20261004-4';
+import { createShareUrl, readShareHash, urlWithoutShare } from './share-config.js?v=20261004-4';
+import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhJob, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js?v=20261004-4';
 
 let wasmReady = false;
 
@@ -363,6 +363,7 @@ function getPersistedFieldIds() {
         'ecological-module-level', 'kitchen-module-level',
         'resource-detector-level', 'crafting-module-level',
         'rate-unit', 'season-on', 'layout-sim-on',
+        'electric-enabled', 'electric-generator-level',
         'aniimo-best', 'aniimo-minimum', 'aniimo-custom'
     ];
 }
@@ -468,7 +469,7 @@ async function shareCurrentConfig() {
 }
 
 function loadInputsFromStorage(data) {
-    if (!data) return;
+    data = data || {};
     if (data.levelUpStock && typeof data.levelUpStock === 'object') levelUpStock = { ...data.levelUpStock };
     if (Array.isArray(data.skippedRecipes)) skippedRecipes = new Set(data.skippedRecipes.filter(n => typeof n === 'string'));
     if (Array.isArray(data.unlockedSpecial)) unlockedSpecial = new Set(data.unlockedSpecial.filter(n => typeof n === 'string'));
@@ -510,6 +511,12 @@ function loadInputsFromStorage(data) {
             el.value = data[id];
         }
     });
+    // E-mode is available from RV12. The calculator remains usable for every RV level; electricity is only
+    // activated once the selected RV reaches the in-game unlock level. Existing saved configs keep
+    // their explicit choice; only a fresh/legacy config gets this default.
+    const electric = document.getElementById('electric-enabled');
+    if (electric && !('electric-enabled' in data)) electric.checked = selectedHomeLevel() >= 12;
+    if (electric && selectedHomeLevel() < 12) electric.checked = false;
     levelUpTargetChosen = 'level-up-target' in data;
 }
 
@@ -688,6 +695,10 @@ function selectedHomeLevel() {
     return numberOrDefault(document.getElementById('home-level').value, MAX_HOME_LEVEL);
 }
 
+function electricSystemAvailable() {
+    return selectedHomeLevel() >= 12;
+}
+
 function populateHomeLevels() {
     const options = [];
     for (let level = 1; level <= MAX_HOME_LEVEL; level++) {
@@ -766,6 +777,7 @@ function attachModeHandlers() {
     document.getElementById('home-level').addEventListener('change', () => {
         renderSimpleSummary();
         renderStrategy();
+        renderElectricSettings();
     });
     document.getElementById('fill-btn').addEventListener('click', () => {
         fillAdvancedFrom(numberOrDefault(document.getElementById('fill-level').value, MAX_HOME_LEVEL));
@@ -2716,6 +2728,38 @@ function renderProfitBreakdown(plan) {
         </div>`;
 }
 
+function selectedGeneratorLevel() {
+    const selected = document.getElementById('electric-generator-level')?.value || 'auto';
+    if (selected === 'auto') {
+        const rv = isSimpleMode() ? selectedHomeLevel() : numberOrDefault(document.getElementById('fill-level')?.value, selectedHomeLevel());
+        return generatorLevelForRv(rv);
+    }
+    return Math.max(1, Math.min(5, numberOrDefault(selected, 1)));
+}
+
+function renderElectricSettings() {
+    const available = electricSystemAvailable();
+    const toggle = document.getElementById('electric-enabled');
+    const level = document.getElementById('electric-generator-level');
+    const panel = document.querySelector('.power-config');
+    if (!toggle || !level) return;
+    if (!available) {
+        toggle.checked = false;
+        toggle.disabled = true;
+        level.disabled = true;
+        if (panel) panel.hidden = true;
+        return;
+    }
+    toggle.disabled = false;
+    if (panel) panel.hidden = false;
+    level.disabled = !toggle.checked;
+    const effective = selectedGeneratorLevel();
+    const hint = document.getElementById('electric-generator-hint');
+    if (hint) hint.textContent = toggle.checked
+        ? `RV12 起開放電力系統；目前使用 ${generatorLabel(effective)}。電網中的 E-mode 設施共用同一台 Crackle Generator。`
+        : '電力系統已開放，但目前關閉 E-mode；計算器將依原 Aniimax 邏輯運算。';
+}
+
 // Get plan-level input values from the form (facilities/modules/prioritize-byproducts, nothing
 // goal-related, since find_plan doesn't need a target). Currency is always coins: the full
 // release removed Bud Tickets, the only other sellable currency.
@@ -2733,7 +2777,10 @@ function getPlanInputValues() {
             exclude: excludedRecipes(),
             season: seasonActive(),
             facilities,
-            modules
+            modules,
+            home_level: selectedHomeLevel(),
+            electric_enabled: electricSystemAvailable() && (document.getElementById('electric-enabled')?.checked ?? false),
+            generator_level: selectedGeneratorLevel()
         };
     }
 
@@ -2760,7 +2807,10 @@ function getPlanInputValues() {
         exclude: excludedRecipes(),
         season: seasonActive(),
         facilities,
-        modules
+        modules,
+        home_level: selectedHomeLevel(),
+        electric_enabled: electricSystemAvailable() && (document.getElementById('electric-enabled')?.checked ?? false),
+        generator_level: selectedGeneratorLevel()
     };
 }
 
@@ -3845,6 +3895,35 @@ function updateRateUnitDisplays() {
 // Render a successfully computed plan: rate summary + facility plan table. Goal-independent,
 // called once per Calculate click (or facility/currency/module change), not on every goal
 // keystroke.
+function renderElectricSummary(plan) {
+    const card = document.getElementById('electric-result-card');
+    const body = document.getElementById('electric-result');
+    if (!card || !body) return;
+    if (!plan.electric_enabled) {
+        card.style.display = 'none';
+        body.textContent = '';
+        return;
+    }
+    card.style.display = '';
+    const demand = Number(plan.electric_demand || 0);
+    const capacity = Number(plan.electric_generator_capacity || 0);
+    const threshold = Number(plan.electric_boost_threshold || 0);
+    const efficiency = Number(plan.electric_efficiency || 1);
+    const pct = Math.round(efficiency * 100);
+    const powered = (plan.electric_units || []).reduce((sum, row) => sum + Number(row[2] || 0), 0);
+    const rows = (plan.electric_units || []).map(([facility, item, units, power]) => `
+        <tr><td>${prettyFacility(facility)}</td><td>${prettyItem(item)}</td><td>${units}</td><td>${formatNumber(Math.round(power))}W</td></tr>`).join('');
+    body.innerHTML = `
+        <div class="electric-summary-grid">
+            <div><span class="summary-label">Generator</span><strong>Lv.${plan.electric_generator_level}</strong></div>
+            <div><span class="summary-label">電網需求</span><strong>${formatNumber(Math.round(demand))} / ${formatNumber(Math.round(capacity))}W</strong></div>
+            <div><span class="summary-label">120%門檻</span><strong>${formatNumber(Math.round(threshold))}W</strong></div>
+            <div><span class="summary-label">E-mode效率</span><strong>${pct}%</strong></div>
+            <div><span class="summary-label">Powered設施單位</span><strong>${powered}</strong></div>
+        </div>
+        ${rows ? `<details class="explain"><summary>查看 E-mode 分配</summary><div class="table-wrapper"><table class="facility-plan-table"><thead><tr><th>設施</th><th>配方</th><th>數量</th><th>耗電</th></tr></thead><tbody>${rows}</tbody></table></div></details>` : '<p class="hint small">目前最佳方案沒有使用可確認耗電需求的 E-mode 設施。</p>'}`;
+}
+
 function displayPlan(plan) {
     const resultsSection = document.getElementById('results-section');
     const errorEl = document.getElementById('error-message');
@@ -3906,6 +3985,7 @@ function displayPlan(plan) {
     renderSeedTable(plan);
     renderLevelUp(plan);
     renderProfitBreakdown(plan);
+    renderElectricSummary(plan);
     renderFacilityPlan(plan);
     renderAniimoSummary(plan);
     // The page stays where the player is; the results appear without scrolling to them.
@@ -4330,6 +4410,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     populateLevelUpTargets();
     loadInputsFromStorage(savedData);
     attachAutoSave();
+    document.getElementById('electric-enabled')?.addEventListener('change', renderElectricSettings);
+    document.getElementById('electric-generator-level')?.addEventListener('change', renderElectricSettings);
+    document.getElementById('home-level')?.addEventListener('change', renderElectricSettings);
+    document.getElementById('fill-level')?.addEventListener('change', renderElectricSettings);
+    renderElectricSettings();
     attachHomeProfileHandlers();
     attachFacilityTierHandlers();
     attachModeHandlers();

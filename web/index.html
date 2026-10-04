@@ -83,7 +83,7 @@
                         <span class="hint small">將下方所有數量與等級替換為該 RV 等級可擁有的配置。</span>
                     </div>
 
-                    <!-- Facility cards are generated dynamically by app.js?v=20261004-3 from the FACILITIES config,
+                    <!-- Facility cards are generated dynamically by app.js?v=20261004-4 from the FACILITIES config,
                          grouped into category sections (Materials / Environment / Materials
                          Processing), so new facilities can be added without editing this file. -->
                     <div class="facilities-container" id="facilities-grid"></div>
@@ -152,6 +152,29 @@
                             <p class="hint small">會計入升級需求。木塊、礦砂與較低階材料會自動換算為高階材料。</p>
                             <div class="stock-grid" id="level-up-stock-grid"></div>
                         </details>
+                    </div>
+
+                    <div class="power-config">
+                        <h3>Crackle Generator 電力模式</h3>
+                        <label class="priority-switch">
+                            <input type="checkbox" role="switch" id="electric-enabled">
+                            <span class="switch-track" aria-hidden="true"></span>
+                            <span>使用 Crackle Generator E-mode</span>
+                        </label>
+                        <div class="input-row">
+                            <div class="input-field">
+                                <label for="electric-generator-level">Generator 等級</label>
+                                <select id="electric-generator-level">
+                                    <option value="auto">自動（依 RV）</option>
+                                    <option value="1">Lv.1</option>
+                                    <option value="2">Lv.2</option>
+                                    <option value="3">Lv.3</option>
+                                    <option value="4">Lv.4</option>
+                                    <option value="5">Lv.5</option>
+                                </select>
+                            </div>
+                        </div>
+                        <p class="hint small" id="electric-generator-hint"></p>
                     </div>
                 </div>
 
@@ -269,6 +292,11 @@
                         <div class="seed-table" id="seed-table"></div>
                     </div>
 
+                    <div class="card production-steps" id="electric-result-card" style="display: none;">
+                        <h2>電力模式</h2>
+                        <div id="electric-result"></div>
+                    </div>
+
                     <div class="card production-steps" id="profit-card" style="display: none;">
                         <h2>商品收益</h2>
                         <p class="hint">已扣除種子成本。</p>
@@ -282,7 +310,7 @@
                             <p>每一列代表一種商品；同一設施分配多種商品時會各列一列。需要生長環境的作物會依覆蓋它們的熱能爐、製冷機或日光燈環境分組，並顯示配置方式。其他設施則依設施分類顯示。</p>
                             <p>Aniimo 欄位中的圓點代表對應能力與等級；帶有外圈表示方案依賴該設施的個性加成。將游標移到能力上可查看詳細資訊。</p>
                         </details>
-                        <!-- Populated by app.js?v=20261004-3's renderFacilityPlan(): one section per
+                        <!-- Populated by app.js?v=20261004-4's renderFacilityPlan(): one section per
                              environment mode in use (Cool/Warm/Freeze/Scorching/Adequate) first,
                              then one table per facility category (Materials / Environment /
                              Materials Processing) for everything else. -->
@@ -545,6 +573,6 @@
             }
         });
     </script>
-    <script type="module" src="app.js?v=20261004-3"></script>
+    <script type="module" src="app.js?v=20261004-4"></script>
 </body>
 </html>

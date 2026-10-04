@@ -2926,3 +2926,32 @@ tr:hover .skip-row,
     .home-profile-controls button { flex: 1 1 auto; }
     .home-profile-controls select { min-width: 0; }
 }
+
+.power-config {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.power-config h3 { margin-top: 0; }
+
+.electric-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: .75rem;
+    margin-bottom: .9rem;
+}
+
+.electric-summary-grid > div {
+    padding: .7rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.electric-summary-grid strong,
+.electric-summary-grid .summary-label {
+    display: block;
+}
+
+.electric-summary-grid strong { margin-top: .2rem; }
