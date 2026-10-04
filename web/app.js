@@ -2033,11 +2033,41 @@ function attachRosterHandlers() {
 function renderRosterSummary(plan) {
     const busy = roster.map(() => 0);
     const where = roster.map(() => new Map());
+
+    // E-mode replaces the Aniimo work on the powered facility units.  The exact planner already
+    // uses the same rule when solving the roster capacity; the display must therefore subtract
+    // those powered units too, otherwise the Team card incorrectly shows every Mine/Well as
+    // permanently staffed even though Crackle Generator is doing that work.  When the shared
+    // grid is in its 120% band, each powered unit supplies 1.2 units of production capacity; at
+    // 100% it supplies 1.0.
+    const powered = new Map();
+    (plan.electric_units || []).forEach(([facility, item, units]) => {
+        const key = `${facility}|${prettyItem(item)}`;
+        powered.set(key, (powered.get(key) || 0) + Number(units || 0));
+    });
+    // E-mode replaces one normal facility worker per powered facility unit. The 120%
+    // efficiency is a production-capacity bonus, not an extra Aniimo worker replacement.
+    // Therefore 3 powered Mines replace 3 Earth workers, while the powered Mines still
+    // contribute 3.6 units of production capacity at 120%.
+    const poweredWork = step => {
+        if (!plan.electric_enabled || !step.facility || !step.item_name) return 0;
+        const key = `${step.facility}|${prettyItem(step.item_name)}`;
+        return powered.get(key) || 0;
+    };
     (plan.coin_items || []).forEach(step => {
         if (step.crew == null || step.status !== 'producing' || !roster[step.crew]) return;
-        busy[step.crew] += RESIDENT_FACILITIES.has(step.facility) ? step.facility_count : (step.busy_units ?? step.facility_count);
+        const normalBusy = RESIDENT_FACILITIES.has(step.facility)
+            ? step.facility_count
+            : (step.busy_units ?? step.facility_count);
+        const effectiveBusy = Math.max(0, normalBusy - poweredWork(step));
+        busy[step.crew] += effectiveBusy;
         const place = `${prettyFacility(step.facility)}（${prettyItem(step.item_name)}）`;
-        where[step.crew].set(place, (where[step.crew].get(place) || 0) + step.facility_count);
+        // Only show the units that still require an Aniimo after E-mode has replaced the
+        // powered portion.  This is especially important for Mine/Well rows in the team card.
+        const workerUnits = Math.max(0, step.facility_count - (plan.electric_enabled ? Math.round((powered.get(`${step.facility}|${prettyItem(step.item_name)}`) || 0)) : 0));
+        if (workerUnits > 0) {
+            where[step.crew].set(place, (where[step.crew].get(place) || 0) + workerUnits);
+        }
     });
     (plan.staffing || []).forEach(([building, member, share]) => {
         if (!roster[member]) return;
@@ -3171,6 +3201,27 @@ function renderAniimoSummary(plan) {
     }
     const container = document.getElementById('aniimo-summary');
     const groups = new Map();
+
+    // Crackle Generator E-mode replaces the Aniimo that would otherwise stand at the powered
+    // facility. The optimizer already uses this rule when solving the plan; this display must use
+    // the same rule or it will over-count the team (for example, 7 Mines with 3 powered should
+    // need 4 Earth Aniimo, not 7). In the 120% band a powered unit supplies 1.2 units of worker
+    // capacity; at 100% it supplies 1.0. Growing jobs (sowing/reaping/logging) are not replaced
+    // by E-mode, so only facility-worker tasks are reduced.
+    const powered = new Map();
+    (plan.electric_units || []).forEach(([facility, item, units]) => {
+        const key = `${facility}|${prettyItem(item)}`;
+        powered.set(key, (powered.get(key) || 0) + Number(units || 0));
+    });
+    // One E-mode facility unit replaces one Aniimo worker. Do not multiply this
+    // by the 120% production factor: that factor belongs to production throughput,
+    // not to the number of Aniimo removed from the team requirement.
+    const poweredFor = step => {
+        if (!plan.electric_enabled || !step.facility || !step.item_name) return 0;
+        return powered.get(`${step.facility}|${prettyItem(step.item_name)}`) || 0;
+    };
+    const poweredWorkFor = step => poweredFor(step);
+
     (plan.coin_items || []).forEach(step => {
         (step.aniimo_tasks || []).forEach(task => {
             const key = taskLabel(task, step.facility);
@@ -3181,9 +3232,10 @@ function renderAniimoSummary(plan) {
                 groups.set(key, { label: key, ability: task.ability, level: task.level, bonus: task.personality_bonus, personality, busy: 0, where: new Map(), jobs: new Map() });
             }
             const g = groups.get(key);
-            g.busy += task.busy;
+            const hasGrowingJobs = (task.jobs || []).length > 0;
+            g.busy += Math.max(0, task.busy - (hasGrowingJobs ? 0 : poweredWorkFor(step)));
             // A growing job reads as the job itself, however many crops it covers.
-            if ((task.jobs || []).length) {
+            if (hasGrowingJobs) {
                 // Where a job happens matters: reaping is Farmland's, logging Woodland's.
                 task.jobs.forEach(job => {
                     if (!g.jobs.has(job)) g.jobs.set(job, new Set());
@@ -3192,7 +3244,10 @@ function renderAniimoSummary(plan) {
                 return;
             }
             const place = `${prettyFacility(step.facility)}（${prettyItem(step.item_name)}）`;
-            g.where.set(place, (g.where.get(place) || 0) + step.facility_count);
+            const workerUnits = Math.max(0, step.facility_count - Math.round(poweredFor(step)));
+            if (workerUnits > 0) {
+                g.where.set(place, (g.where.get(place) || 0) + workerUnits);
+            }
         });
     });
     // Environment buildings in use each keep an Aniimo busy (abilities confirmed in game; whether
