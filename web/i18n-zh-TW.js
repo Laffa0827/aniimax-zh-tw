@@ -152,6 +152,7 @@ export function zhCategory(name) { return ZH_TW.categories[name] || name; }
 export function zhAbility(name) { return ZH_TW.abilities[name] || name; }
 export function zhPersonality(name) { return ZH_TW.personalities[name] || name; }
 export function zhEnvironment(name) { return ZH_TW.environments[name] || name; }
+export function zhJob(name) { return ZH_TW.jobs[name] || name; }
 export function zhAbilityAbout(name) { return ZH_TW.abilityAbout[name] || name; }
 
 // Translate the long facility tooltips without changing the underlying data.
