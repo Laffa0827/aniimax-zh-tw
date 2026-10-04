@@ -93,7 +93,7 @@
 
                     <div class="modules-grid">
                         <div class="module-card">
-                            <h4>生態模組 <span class="info-icon" data-tooltip="Lv.1：高速小麥&#10;Lv.2：高速竹子&#10;Lv.3：高速馬鈴薯&#10;Lv.4：高速檸檬&#10;Lv.5：高速水稻&#10;Lv.6：高速楓糖漿&#10;Lv.7：高速草莓&#10;Lv.8：高速椰子">?</span></h4>
+                            <h4>生態模組 <span class="info-icon" data-tooltip="Lv.1：高速小麥&#10;Lv.2：高速竹子&#10;Lv.3：高速馬鈴薯&#10;Lv.4：高速檸檬&#10;Lv.5：高速米&#10;Lv.6：高速楓糖漿&#10;Lv.7：高速草莓&#10;Lv.8：高速椰子">?</span></h4>
                             <div class="input-field">
                                 <label for="ecological-module-level">等級</label>
                                 <input type="number" id="ecological-module-level" value="0" min="0" max="10">
@@ -101,7 +101,7 @@
                         </div>
 
                         <div class="module-card">
-                            <h4>廚房模組 <span class="info-icon" data-tooltip="Lv.2：高級麵包&#10;Lv.3：高級馬鈴薯濃湯&#10;Lv.4：高級甜米露&#10;Lv.5：高級鹹檸檬&#10;Lv.6：高級果凍&#10;Lv.7：高級莓巧椰奶布丁">?</span></h4>
+                            <h4>廚房模組 <span class="info-icon" data-tooltip="Lv.2：高級麵包&#10;Lv.3：高級馬鈴薯湯&#10;Lv.4：高級甜米酒&#10;Lv.5：高級鹽漬檸檬&#10;Lv.6：高級果凍&#10;Lv.7：高級莓果巧克力椰子布丁">?</span></h4>
                             <div class="input-field">
                                 <label for="kitchen-module-level">等級</label>
                                 <input type="number" id="kitchen-module-level" value="0" min="0" max="10">
@@ -427,7 +427,7 @@
                 <p>作物與樹木的基礎時間是生長時間，再扣除 Aniimo 澆水帶來的時間縮減：作物生長期間會澆水兩次，每次澆水會減少作物自身時間的八分之一。例如 40 分鐘作物會變成 30 分鐘，4 分鐘作物會變成 3 分鐘。環境不足時作物仍會變慢，但澆水扣除的分鐘數相同；這部分尚未在遊戲中完全確認。</p>
                 <p>其他所有配方都有工作量，實際時間取決於設施畫面顯示的 Aniimo 效率 \(e\) 與基礎速率 \(r\)：</p>
                 <div class="math-block">\[ t = \frac{\text{workload}}{r \times e \times 1.2^{\,\text{personality}}} \]</div>
-                <p>加工設施的基礎速率為每秒 1 工作量；水井、礦山、沙堡、露珠屋等採集設施，以及舞墊拋光機與 Aniipod 製造機，在高能力需求配方上會更快。效率會依 Aniimo 能力等級與配方需求等級計算；個性吻合設施時則有額外速度加成。</p>
+                <p>加工設施的基礎速率為每秒 1 工作量；水井、礦場、沙堡、露珠屋等採集設施，以及舞墊拋光機與 Aniipod 製造機，在高能力需求配方上會更快。效率會依 Aniimo 能力等級與配方需求等級計算；個性吻合設施時則有額外速度加成。</p>
 
                 <h3>環境覆蓋</h3>
                 <p>環境溫度依序為：冰凍 -2、寒冷 -1、無設施 0、溫暖 +1、炎熱 +2。作物處於自身環境時為 100% 速度，相差一級為 80%，兩級為 50%，更遠則為 20%。無覆蓋田地視為中性，因此寒冷或溫暖作物仍可用 80% 速度生長；冰凍或炎熱作物則為 50%。「適宜」是獨立環境，需要日光燈。</p>
