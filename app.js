@@ -963,9 +963,9 @@ function improvementCandidates(base, setup) {
             if (tierCount(tiers) < tierCount(cap)) {
                 for (const level of levelsAbove(0, capLevel)) {
                     candidates.push({
-                        kind: 'Facilities', group: `another:${f.name}`, family: `+1 ${prettyFacility(f.name)}`,
+                        kind: 'Facilities', group: `another:${f.name}`, family: `+1 ${f.name}`,
                         level: f.hasLevels === false || capLevel === 1 ? null : level,
-                        label: f.hasLevels === false || capLevel === 1 ? `+1 ${prettyFacility(f.name)}` : `+1 ${prettyFacility(f.name)} (Lv.${level})`,
+                        label: f.hasLevels === false || capLevel === 1 ? `+1 ${f.name}` : `+1 ${f.name} (Lv.${level})`,
                         input: { ...base, facilities: { ...base.facilities, [f.name]: [...tiers, { count: 1, level }] } },
                     });
                 }
@@ -979,8 +979,8 @@ function improvementCandidates(base, setup) {
                     .concat({ count: 1, level });
                 candidates.push({
                     kind: 'Facilities', group: `upgrade:${f.name}`, level,
-                    family: tierCount(tiers) > 1 ? `1 ${prettyFacility(f.name)} 至` : `${prettyFacility(f.name)} 至`,
-                    label: tierCount(tiers) > 1 ? `1 ${prettyFacility(f.name)} 至 Lv.${level}` : `${prettyFacility(f.name)} 至 Lv.${level}`,
+                    family: tierCount(tiers) > 1 ? `1 ${f.name} to` : `${f.name} to`,
+                    label: tierCount(tiers) > 1 ? `1 ${f.name} to Lv.${level}` : `${f.name} to Lv.${level}`,
                     input: { ...base, facilities: { ...base.facilities, [f.name]: raised } },
                 });
             }
@@ -3787,7 +3787,7 @@ function updateRateDisplay(pickUnit = false) {
         return `<tr${r.rank === 1 ? ' class="top"' : ''}>
             <td>${r.rank ?? ''}</td>
             <td>${r.label}</td>
-            <td>${why ? '—' : amount(r.perSecond * multiplier)}</td>
+            <td>${why ? 'none' : amount(r.perSecond * multiplier)}</td>
             <td>${why || made}</td>
         </tr>`;
     }).join('');
