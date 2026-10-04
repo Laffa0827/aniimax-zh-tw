@@ -6,7 +6,7 @@ import {
     LEVEL_UP_COSTS, LEVEL_UP_CHAINS, SPECIAL_RECIPES, SEASON, ANIIPOD_TIERS, PERSONALITY_PAIRS, personalityLetter, opposedPersonality,
 } from './facility-config.js';
 import { createShareUrl, readShareHash, urlWithoutShare } from './share-config.js';
-import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js';
+import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhJob, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js';
 
 let wasmReady = false;
 
@@ -792,6 +792,20 @@ function attachSpecialHandlers() {
         const name = e.target.dataset.special;
         if (!name) return;
         if (e.target.checked) unlockedSpecial.add(name); else unlockedSpecial.delete(name);
+        renderRecipeCount();
+        saveInputsToStorage();
+    });
+
+    document.getElementById('special-select-all').addEventListener('click', () => {
+        SPECIAL_RECIPES.forEach(r => unlockedSpecial.add(r.name));
+        renderSpecialRecipes();
+        renderRecipeCount();
+        saveInputsToStorage();
+    });
+
+    document.getElementById('special-clear-all').addEventListener('click', () => {
+        SPECIAL_RECIPES.forEach(r => unlockedSpecial.delete(r.name));
+        renderSpecialRecipes();
         renderRecipeCount();
         saveInputsToStorage();
     });
@@ -1604,7 +1618,7 @@ function startLayoutSim(svg, flows, stock) {
     const made = new Set(units.flatMap(u => u.jobs).flatMap(j => [j.terms.makes, j.terms.byproduct?.[0]].filter(Boolean)));
     const sim = { svg, units, speed, stock, made, layer: svg.querySelector('.layout-dots'), dots: [], frame: 0, visible: true };
     layoutSim = sim;
-    document.getElementById('layout-clock').title = `Game time since everything was set up, at ${formatNumber(Math.round(speed))}× speed`;
+    document.getElementById('layout-clock').title = `家園配置模擬時間；以 ${formatNumber(Math.round(speed))}× 速度播放`;
     // Only plays while the diagram is on screen.
     sim.observer = new IntersectionObserver(([entry]) => {
         sim.visible = entry.isIntersecting;
@@ -1741,7 +1755,7 @@ function showSimClock(seconds) {
     const minutes = Math.floor(seconds / 60);
     const days = Math.floor(minutes / 1440);
     const hours = Math.floor(minutes / 60) % 24;
-    const text = `${days ? `${days}d ` : ''}${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
+    const text = `${days ? `${days} 天 ` : ''}${hours} 小時 ${String(minutes % 60).padStart(2, '0')} 分鐘`;
     const clock = document.getElementById('layout-clock');
     if (clock.textContent !== text) clock.textContent = text;
 }
@@ -1808,7 +1822,7 @@ function setStep(key, state, detail, proven) {
 }
 
 // What "proven best" means, shown on hovering it.
-const PROVEN_MEANS = 'No plan the model allows does better. Some of its options, such as how plots can be arranged around an environment building, come from a shortlist rather than every possibility.';
+const PROVEN_MEANS = '在目前模型允許的範圍內，沒有更好的方案。部分選項（例如土地如何圍繞環境設施排列）來自候選方案清單，而不是逐一枚舉所有可能性。';
 
 // Whether a solve proved its plan the best the model allows, or ran out of time first.
 function searchNote(proven) {
@@ -2009,7 +2023,7 @@ function renderRosterSummary(plan) {
     (plan.coin_items || []).forEach(step => {
         if (step.crew == null || step.status !== 'producing' || !roster[step.crew]) return;
         busy[step.crew] += RESIDENT_FACILITIES.has(step.facility) ? step.facility_count : (step.busy_units ?? step.facility_count);
-        const place = `${step.facility} (${prettyItem(step.item_name)})`;
+        const place = `${prettyFacility(step.facility)}（${prettyItem(step.item_name)}）`;
         where[step.crew].set(place, (where[step.crew].get(place) || 0) + step.facility_count);
     });
     (plan.staffing || []).forEach(([building, member, share]) => {
@@ -2344,20 +2358,20 @@ function renderPriorities() {
         const above = at > 0 ? priorityOrder.indexOf(shown[at - 1]) : -1;
         const below = at < shown.length - 1 ? priorityOrder.indexOf(shown[at + 1]) : -1;
         const label = priorityLabel(p.target, best);
-        const note = p.target === 'aniipods' && !best ? ' <span class="hint small">(no Aniipod Maker yet)</span>' : '';
+        const note = p.target === 'aniipods' && !best ? ' <span class="hint small">（尚未擁有 Aniipod 製造機）</span>' : '';
         return `
         <li class="priority${p.on ? '' : ' off'}" draggable="true" data-index="${i}">
             <span class="drag-handle" aria-hidden="true">⋮⋮</span>
             <span class="priority-rank">${p.on ? shown.slice(0, at + 1).filter(q => q.on).length : ''}</span>
             <span class="priority-name">${label}${note}</span>
-            <label class="priority-switch" title="${p.on ? 'On: the plan goes for this' : 'Off: the plan ignores this'}">
+            <label class="priority-switch" title="${p.on ? '開啟：方案會以此為目標' : '關閉：方案會忽略此目標'}">
                 <input type="checkbox" role="switch" data-toggle="${i}" aria-label="${label}"${p.on ? ' checked' : ''}>
                 <span class="switch-track" aria-hidden="true"></span>
                 <span class="switch-text">${p.on ? '開啟' : '關閉'}</span>
             </label>
             <span class="priority-move">
-                <button type="button" data-move="${i}" data-to="${above}" data-by="-1" aria-label="Move ${label} up"${above < 0 ? ' disabled' : ''}>${ARROW_UP}</button>
-                <button type="button" data-move="${i}" data-to="${below}" data-by="1" aria-label="Move ${label} down"${below < 0 ? ' disabled' : ''}>${ARROW_DOWN}</button>
+                <button type="button" data-move="${i}" data-to="${above}" data-by="-1" aria-label="將 ${label} 上移"${above < 0 ? ' disabled' : ''}>${ARROW_UP}</button>
+                <button type="button" data-move="${i}" data-to="${below}" data-by="1" aria-label="將 ${label} 下移"${below < 0 ? ' disabled' : ''}>${ARROW_DOWN}</button>
             </span>
         </li>`;
     }).join('');
@@ -2539,9 +2553,9 @@ function formatDuration(seconds) {
     const days = Math.floor(minutes / 1440);
     const hours = Math.floor((minutes % 1440) / 60);
     const mins = minutes % 60;
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h ${mins}m`;
-    return `${mins}m`;
+    if (days > 0) return `${days} 天${hours ? ` ${hours} 小時` : ''}`;
+    if (hours > 0) return `${hours} 小時${mins ? ` ${mins} 分鐘` : ''}`;
+    return `${mins} 分鐘`;
 }
 
 // What the plans on screen were asked for, so they're described against the right target even
@@ -2776,15 +2790,26 @@ function prettyEnvironment(name) {
     return zhEnvironment(name);
 }
 
-// A plan row's reason with its item names made readable: "Used for dried_strawberries, jam; the
-// rest sells directly" -> "Used for Dried Strawberries, Jam; the rest sells directly".
+function prettyJob(name) {
+    return zhJob(name);
+}
+
+// Translate the solver's short reason strings without changing the underlying Rust data.
+// The solver deliberately keeps these in English because they are also used by tests; this
+// display-only layer turns every known variant into Traditional Chinese.
 function prettyReason(reason) {
     if (!reason) return reason;
-    const names = list => list.split(', ').map(prettyItem).join(', ');
-    return reason
-        .replace(/^Used for ([^;]+)/, (_, list) => '用於 ' + names(list))
-        .replace(/takes turns with ([^;]+)$/, (_, list) => '與 ' + names(list) + ' 輪流生產')
-        .replace(/; the rest sells directly$/, '；其餘直接出售')
+    const names = list => list.split(', ').map(prettyItem).join('、');
+    let out = reason
+        .replace(/^For the level-up$/, '用於 RV 升級')
+        .replace(/^Sells directly$/, '直接出售')
+        .replace(/^Nothing it can make helps this plan$/, '此設施能製作的物品都無助於目前方案')
+        .replace(/^Used for ([^;]+); the rest goes to the level-up$/, (_, list) => '用於 ' + names(list) + '；其餘用於 RV 升級')
+        .replace(/^Used for ([^;]+); the rest sells directly$/, (_, list) => '用於 ' + names(list) + '；其餘直接出售')
+        .replace(/^Used for ([^;]+)$/, (_, list) => '用於 ' + names(list))
+        .replace(/^takes turns with ([^;]+)$/, (_, list) => '與 ' + names(list) + ' 輪流生產')
+        .replace(/; takes turns with ([^;]+)$/, (_, list) => '；與 ' + names(list) + ' 輪流生產');
+    return out;
 }
 
 // Keys ("Facility|item") of the shown plan's rows that rely on recipes not yet checked in game;
@@ -3044,7 +3069,7 @@ function planRows(rows) {
                         <td data-label="數量">${step.facility_count}</td>
                         <td data-label="生產">${step.item_name ? prettyItem(step.item_name) : '-'}${unverifiedRowKeys.has(`${step.facility}|${step.item_name}`) ? '<span class="tag unverified" title="尚未在遊戲中確認">未確認</span>' : ''}${step.item_name && step.status === 'producing' ? `<button type="button" class="skip-row" data-skip="${step.item_name}" title="不想生產這個？略過後重新計算" aria-label="略過 ${prettyItem(step.item_name)} 並重新計算">✕</button>` : ''}</td>
                         <td data-label="Aniimo">${aniimoLabel(step)}</td>
-                        <td data-label="Why">${prettyReason(step.reason)}</td>
+                        <td data-label="用途">${prettyReason(step.reason)}</td>
                     </tr>
                 `).join('');
 }
@@ -3052,7 +3077,7 @@ function planRows(rows) {
 // "Sowing", "Sowing and Collecting", "Reaping, Logging and Collecting".
 function listOf(items) {
     if (items.length < 2) return items.join('');
-    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+    return `${items.slice(0, -1).join('、')}與${items[items.length - 1]}`;
 }
 
 
@@ -3060,14 +3085,14 @@ function listOf(items) {
 // A growing environment named in its own colour.
 function modeTag(mode) {
     const tint = ENVIRONMENT_MODE_COLORS[mode] || '#9aa0a8';
-    return `<span class="env-mode-tag" style="--tint:${tint}">${mode}</span>`;
+    return `<span class="env-mode-tag" style="--tint:${tint}">${prettyEnvironment(mode)}</span>`;
 }
 
 // What a row's Aniimo work on: each growing job ("Sowing crops" when it covers both Farmland and
 // Woodland, "Reaping farmland" when it's one facility's), then the facilities.
 function whereText(g) {
     return [...g.jobs]
-        .map(([job, at]) => `${job} ${at.size > 1 ? 'crops' : listOf([...at].map(facility => facility.toLowerCase()))}`)
+        .map(([job, at]) => `${prettyJob(job)} ${at.size > 1 ? '作物' : listOf([...at].map(facility => prettyFacility(facility)))}`)
         .concat([...g.where.entries()].map(([place, n]) => `${n > 1 ? n + '× ' : ''}${place}`))
         .join(', ');
 }
@@ -3115,7 +3140,7 @@ function renderAniimoSummary(plan) {
                 });
                 return;
             }
-            const place = `${step.facility} (${prettyItem(step.item_name)})`;
+            const place = `${prettyFacility(step.facility)}（${prettyItem(step.item_name)}）`;
             g.where.set(place, (g.where.get(place) || 0) + step.facility_count);
         });
     });
@@ -3566,7 +3591,7 @@ function renderEnvironmentDiagram(layout, mode, building, rows = [], unit = null
 
     return `
         <div class="env-diagram">
-            <svg viewBox="${viewMin} ${viewMin} ${viewWidth} ${viewHeight}" role="img" aria-label="${building} layout, ${mode} coverage">
+            <svg viewBox="${viewMin} ${viewMin} ${viewWidth} ${viewHeight}" role="img" aria-label="${prettyFacility(building)}配置圖，${prettyEnvironment(mode)}範圍">
                 <g class="env-grid">${gridLines.join('')}</g>
                 <rect x="${coverageMin}" y="${coverageMin}" width="${coverageSize}" height="${coverageSize}"
                       fill="${modes ? tintOf(modes[0]) : tint}" fill-opacity="${shadeOf(modes ? modes[0] : mode, 0.12)}" />
@@ -3656,7 +3681,7 @@ function renderFacilityPlan(plan) {
         const middle = zones.find(z => z.zone === 1)?.mode;
         return `
             <div class="facility-category">
-                <h4 class="facility-category-title">${unit.building} ${modeTag(modes[0])}<span class="env-head-sep">|</span>${unit.partner[0]} ${modeTag(modes[1])}${middle ? `<span class="env-head-sep">|</span>Overlap ${modeTag(middle)}` : ''}</h4>
+                <h4 class="facility-category-title">${prettyFacility(unit.building)} ${modeTag(modes[0])}<span class="env-head-sep">|</span>${prettyFacility(unit.partner[0])} ${modeTag(modes[1])}${middle ? `<span class="env-head-sep">|</span>重疊區 ${modeTag(middle)}` : ''}</h4>
                 <div class="env-unit">
                     ${renderEnvironmentDiagram(zones.flatMap(z => z.layout), zones[0].mode, unit.building, zones.flatMap(z => z.rows), unit, zones)}
                     <div class="env-unit-table">${facilityPlanTableOf(zones.map(z => ({ label: modeTag(z.mode), rows: z.rows })))}</div>
@@ -3685,9 +3710,9 @@ function renderFacilityPlan(plan) {
         }
         return `
             <div class="facility-category">
-                <h4 class="facility-category-title">${units[0].building} ${modeTag(mode)}</h4>
+                <h4 class="facility-category-title">${prettyFacility(units[0].building)} ${modeTag(mode)}</h4>
                 ${units.map((unit, i) => `
-                    ${units.length > 1 ? `<p class="hint small">${unit.building} ${i + 1}</p>` : ''}
+                    ${units.length > 1 ? `<p class="hint small">${prettyFacility(unit.building)} ${i + 1}</p>` : ''}
                     <div class="env-unit">
                         ${renderEnvironmentDiagram(unit.layout, mode, unit.building, unit.rows, unit)}
                         <div class="env-unit-table">${facilityPlanTable(unit.rows)}</div>
@@ -4132,9 +4157,9 @@ function formatRecipeTime(seconds) {
     const hours = Math.floor(total / 3600);
     const minutes = Math.floor((total % 3600) / 60);
     const secs = total % 60;
-    if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
-    if (minutes > 0) return `${minutes}m ${secs}s`;
-    return `${secs}s`;
+    if (hours > 0) return `${hours} 小時${minutes ? ` ${minutes} 分鐘` : ''}${secs ? ` ${secs} 秒` : ''}`;
+    if (minutes > 0) return `${minutes} 分鐘${secs ? ` ${secs} 秒` : ''}`;
+    return `${secs} 秒`;
 }
 
 function formatRecipeInputs(recipe) {
@@ -4145,7 +4170,7 @@ function formatRecipeInputs(recipe) {
             .join(', ');
     }
     if (recipe.cost && recipe.cost > 0) {
-        return `Plant cost: ${recipe.cost}`;
+        return `種植成本：${recipe.cost}`;
     }
     return '-';
 }
@@ -4154,7 +4179,7 @@ function formatRecipeYield(recipe) {
     let text = `${recipe.yield_amount}`;
     if (recipe.byproduct) {
         const [name, amount] = recipe.byproduct;
-        text += ` <span class="hint small">(+${amount} ${name})</span>`;
+        text += ` <span class="hint small">（+${amount} ${prettyItem(name)}）</span>`;
     }
     return text;
 }
@@ -4172,17 +4197,17 @@ function formatRecipeAniimo(recipe, facility) {
         });
         if (jobs.length === 0) return '-';
         return `<span class="job-list">${jobs.map(({ job: [step, ability, level], times }) =>
-            `<span class="job"><span class="job-step">${step}${times > 1 ? ` &times;${times}` : ''}</span> ${abilityTag(ability)}${level > 1 ? ` Lv.${level}+` : ''}</span>`).join('')}</span>`;
+            `<span class="job"><span class="job-step">${prettyJob(step)}${times > 1 ? ` ×${times}` : ''}</span> ${abilityTag(ability)}${level > 1 ? ` Lv.${level}+` : ''}</span>`).join('')}</span>`;
     }
     const [ability, minLevel] = recipe.aniimo;
-    const best = `best Lv.${bestAniimoLevel(ability)}${facility.personality ? ' ' + facility.personality : ''}`;
+    const best = `最佳 Lv.${bestAniimoLevel(ability)}${facility.personality ? ' ' + prettyPersonality(facility.personality) : ''}`;
     return `<span>${abilityTag(ability)} Lv.${minLevel}+<span class="recipe-best">${best}</span></span>`;
 }
 
 // "44 Home Coins", or what a level-up material is for.
 function formatRecipeSell(recipe) {
     if (recipe.sell_currency === 'none') return '<span class="hint small">RV 升級</span>';
-    return `${formatNumber(recipe.sell_value)} ${recipe.sell_value === 1 ? 'Home Coin' : '家園幣'}`;
+    return `${formatNumber(recipe.sell_value)} 家園幣`;
 }
 
 function formatRecipeModule(recipe) {
@@ -4220,7 +4245,7 @@ function renderRecipeTables(recipes) {
                     ${cell('等級', r.facility_level)}
                     ${cell('投入', formatRecipeInputs(r))}
                     ${cell('產出', formatRecipeYield(r))}
-                    ${cell('時間', r.workload ? `${r.workload} workload` : formatRecipeTime(r.production_time))}
+                    ${cell('時間', r.workload ? `${r.workload} 工作量` : formatRecipeTime(r.production_time))}
                     ${cell('售價', formatRecipeSell(r))}
                     ${cell('模組', formatRecipeModule(r))}
                     ${cell('Aniimo', formatRecipeAniimo(r, f))}

@@ -1955,6 +1955,21 @@ details.explain p {
     margin: 0 0 1.25rem;
 }
 
+.recipes-section {
+    margin-top: 1rem;
+}
+
+.recipe-unlock-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.6rem 0 0.8rem;
+}
+
+.recipe-unlock-actions .toggle-button {
+    min-height: 2rem;
+}
+
 .recipes-section .assume-title:first-of-type {
     margin-top: 0.75rem;
 }

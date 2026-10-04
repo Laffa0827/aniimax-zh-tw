@@ -168,10 +168,14 @@
                     </div>
                 </div>
 
-                <details class="explain recipes-section" id="recipes-section">
-                    <summary>配方<span class="skip-count" id="recipe-count"></span></summary>
-                    <p class="assume-title">特殊配方</p>
-                    <p class="hint small">這些配方需要稀有貨幣才能解鎖。只有勾選的配方會納入計算。</p>
+                <details class="explain recipes-section" id="recipes-section" open>
+                    <summary>配方設定<span class="skip-count" id="recipe-count"></span></summary>
+                    <p class="assume-title">我已解鎖的特殊配方</p>
+                    <p class="hint small">請勾選你目前已在遊戲中解鎖的特殊配方。未勾選的配方會視為「尚未解鎖」，因此計算結果可能會在「提升機會」中建議你解鎖它。</p>
+                    <div class="recipe-unlock-actions">
+                        <button type="button" id="special-select-all" class="toggle-button small">全部視為已解鎖</button>
+                        <button type="button" id="special-clear-all" class="toggle-button small">全部取消</button>
+                    </div>
                     <div class="special-grid" id="special-grid"></div>
                     <p class="assume-title">略過配方</p>
                     <p class="hint small">計算器不會使用這些配方，例如尚未解鎖的配方；你也可以在方案中直接按 ✕ 略過。</p>
@@ -297,7 +301,7 @@
                                 <label class="layout-whole"><input type="checkbox" id="layout-whole"> 顯示完整家園</label>
                                 <label class="layout-whole"><input type="checkbox" id="layout-sim-on" checked> Simulate</label>
                             </span>
-                            <span class="layout-sim" id="layout-sim" hidden><span id="layout-clock">0h 00m</span><button type="button" class="toggle-button small" id="layout-replay">重新播放</button></span>
+                            <span class="layout-sim" id="layout-sim" hidden><span id="layout-clock">0 小時 00 分鐘</span><button type="button" class="toggle-button small" id="layout-replay">重新播放</button></span>
                         </div>
                         <div class="layout-diagram" id="layout-diagram"></div>
                     </div>
