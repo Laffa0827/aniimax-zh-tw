@@ -963,9 +963,9 @@ function improvementCandidates(base, setup) {
             if (tierCount(tiers) < tierCount(cap)) {
                 for (const level of levelsAbove(0, capLevel)) {
                     candidates.push({
-                        kind: 'Facilities', group: `another:${f.name}`, family: `+1 ${f.name}`,
+                        kind: 'Facilities', group: `another:${f.name}`, family: `+1 ${prettyFacility(f.name)}`,
                         level: f.hasLevels === false || capLevel === 1 ? null : level,
-                        label: f.hasLevels === false || capLevel === 1 ? `+1 ${f.name}` : `+1 ${f.name} (Lv.${level})`,
+                        label: f.hasLevels === false || capLevel === 1 ? `+1 ${prettyFacility(f.name)}` : `+1 ${prettyFacility(f.name)} (Lv.${level})`,
                         input: { ...base, facilities: { ...base.facilities, [f.name]: [...tiers, { count: 1, level }] } },
                     });
                 }
@@ -979,8 +979,8 @@ function improvementCandidates(base, setup) {
                     .concat({ count: 1, level });
                 candidates.push({
                     kind: 'Facilities', group: `upgrade:${f.name}`, level,
-                    family: tierCount(tiers) > 1 ? `1 ${f.name} to` : `${f.name} to`,
-                    label: tierCount(tiers) > 1 ? `1 ${f.name} to Lv.${level}` : `${f.name} to Lv.${level}`,
+                    family: tierCount(tiers) > 1 ? `1 ${prettyFacility(f.name)} 至` : `${prettyFacility(f.name)} 至`,
+                    label: tierCount(tiers) > 1 ? `1 ${prettyFacility(f.name)} 至 Lv.${level}` : `${prettyFacility(f.name)} 至 Lv.${level}`,
                     input: { ...base, facilities: { ...base.facilities, [f.name]: raised } },
                 });
             }
@@ -1012,7 +1012,7 @@ function rankImprovementsFor(setup) {
         ranking.done = true;
         rankingsBySetup[setup] = ranking;
         renderImprovements();
-        setStep('improve', 'done', 'nothing to check');
+        setStep('improve', 'done', '沒有可檢查的項目');
         return;
     }
     const runId = rankRunId;
@@ -2044,7 +2044,7 @@ function renderRosterSummary(plan) {
         const able = roster.map((a, i) => i).filter(i => (roster[i].abilities[ability] || 0) >= level);
         if (!able.length) return;
         const pick = able.reduce((a, b) => (busy[b] / roster[b].count < busy[a] / roster[a].count ? b : a));
-        const place = `${job}（${prettyFacility(facility)}）`;
+        const place = `${prettyJob(job)}（${prettyFacility(facility)}）`;
         if (!where[pick].has(place)) where[pick].set(place, 1);
     });
     const have = roster.reduce((sum, a) => sum + a.count, 0);
@@ -2143,8 +2143,8 @@ async function loadRecipeIndex() {
 function renderRecipeCount() {
     const parts = [];
     const on = [...unlockedSpecial].filter(name => SPECIAL_NAMES.has(name)).length;
-    if (on) parts.push(`${on} on`);
-    if (skippedRecipes.size) parts.push(`${skippedRecipes.size} skipped`);
+    if (on) parts.push(`已解鎖 ${on}`);
+    if (skippedRecipes.size) parts.push(`已略過 ${skippedRecipes.size}`);
     document.getElementById('recipe-count').textContent = parts.length ? ` (${parts.join(', ')})` : '';
 }
 
@@ -2315,7 +2315,7 @@ const PRIORITY_TARGETS = [
     { id: 'aniipods', label: 'Aniipod' },
     { id: 'Wood Blocks', label: '木塊' },
     { id: 'Mineral Sand', label: '礦砂' },
-    { id: 'season_points', label: SEASON.points, season: true },
+    { id: 'season_points', label: zhItem(SEASON.points), season: true },
 ];
 
 // Drawn arrows rather than the ↑/↓ characters, which some systems render as colored emoji.
@@ -2665,7 +2665,7 @@ function renderSeedTable(plan) {
     const totalWheat = rows.reduce((sum, r) => sum + r.wheat, 0);
     const totals = [
         totalCost > 0 ? `${amount(totalCost)} 家園幣` : '',
-        totalWheat > 0 ? `${amount(totalWheat)} ${SEASON.currency}` : '',
+        totalWheat > 0 ? `${amount(totalWheat)} ${zhItem(SEASON.currency)}` : '',
     ].filter(Boolean).join(' + ');
     card.style.display = 'block';
     const per = levelUp
@@ -2679,7 +2679,7 @@ function renderSeedTable(plan) {
                 <td>${prettyItem(r.name)}</td>
                 <td>${r.plots}</td>
                 <td>${amount(r.seeds)}</td>
-                <td>${r.wheat > 0 ? `${amount(r.wheat)} ${SEASON.currency}` : r.cost > 0 ? `${amount(r.cost)} 家園幣` : '免費'}</td>
+                <td>${r.wheat > 0 ? `${amount(r.wheat)} ${zhItem(SEASON.currency)}` : r.cost > 0 ? `${amount(r.cost)} 家園幣` : '免費'}</td>
             </tr>`).join('')}</tbody>
             ${rows.length > 1 && totals ? `<tfoot><tr><td colspan="3">合計</td><td>${totals}</td></tr></tfoot>` : ''}
         </table>`;
@@ -3787,7 +3787,7 @@ function updateRateDisplay(pickUnit = false) {
         return `<tr${r.rank === 1 ? ' class="top"' : ''}>
             <td>${r.rank ?? ''}</td>
             <td>${r.label}</td>
-            <td>${why ? 'none' : amount(r.perSecond * multiplier)}</td>
+            <td>${why ? '—' : amount(r.perSecond * multiplier)}</td>
             <td>${why || made}</td>
         </tr>`;
     }).join('');
@@ -3822,7 +3822,7 @@ function priorityRows(plan) {
     }
     // During the season, points come with every season item sold, ranked or not.
     if (plan.season_points != null && !rows.some(r => r.target === 'season_points')) {
-        rows.push({ rank: null, target: 'season_points', label: SEASON.points, perSecond: plan.season_points, items: [], missing: null });
+        rows.push({ rank: null, target: 'season_points', label: zhItem(SEASON.points), perSecond: plan.season_points, items: [], missing: null });
     }
     return rows;
 }
@@ -4241,7 +4241,7 @@ function renderRecipeTables(recipes) {
             const cell = (label, value) => `<td data-label="${label}"${value === '-' ? ' class="empty"' : ''}>${value}</td>`;
             const rows = byFacility.get(f.name).map(r => `
                 <tr${r.verified === false ? ' class="unverified"' : ''}>
-                    <td class="recipe-name">${prettyItem(r.name)}${SPECIAL_NAMES.has(r.name) ? ' <span class="tag special" title="需要稀有貨幣才能解鎖">特殊</span>' : ''}${r.season ? ` <span class="tag special" title="僅限 ${SEASON.name}">活動</span>` : ''}${r.verified === false ? ' <span class="info-icon" data-tooltip="尚未在遊戲中確認。">?</span>' : ''}</td>
+                    <td class="recipe-name">${prettyItem(r.name)}${SPECIAL_NAMES.has(r.name) ? ' <span class="tag special" title="需要稀有貨幣才能解鎖">特殊</span>' : ''}${r.season ? ` <span class="tag special" title="僅限 ${zhItem(SEASON.name)}">活動</span>` : ''}${r.verified === false ? ' <span class="info-icon" data-tooltip="尚未在遊戲中確認。">?</span>' : ''}</td>
                     ${cell('等級', r.facility_level)}
                     ${cell('投入', formatRecipeInputs(r))}
                     ${cell('產出', formatRecipeYield(r))}
@@ -4254,7 +4254,7 @@ function renderRecipeTables(recipes) {
 
             return `
                 <div class="facility-recipe-table">
-                    <h4>${f.name}</h4>
+                    <h4>${prettyFacility(f.name)}</h4>
                     <div class="table-wrapper">
                         <table class="recipe-table">
                             <thead>

@@ -159,10 +159,10 @@
                     <label class="priority-switch season-switch">
                         <input type="checkbox" role="switch" id="season-on">
                         <span class="switch-track" aria-hidden="true"></span>
-                        <span class="season-title">月祭活動</span>
+                        <span class="season-title">盈月豐收節</span>
                     </label>
                     <div id="season-config" hidden>
-                        <p class="hint">月祭活動使用專屬貨幣「月光小麥」購買活動種子。是否維持足夠的小麥由你決定；方案會顯示種子消耗量。活動商品除了家園幣外也會取得月祭點數，可在「優先順序」中設定目標。</p>
+                        <p class="hint">盈月豐收節使用專屬貨幣「月芒穗」購買活動種子。是否維持足夠的小麥由你決定；方案會顯示種子消耗量。活動商品除了家園幣外也會取得盈月值，可在「優先順序」中設定目標。</p>
                         <p class="assume-title">配方筆記</p>
                         <div class="special-grid" id="season-notes"></div>
                     </div>
@@ -351,7 +351,7 @@
                                             <th>數量</th>
                                             <th id="product-breakdown-rate-header">收益</th>
                                             <th>價值 <span class="th-unit">家園幣</span></th>
-                                            <th id="product-breakdown-points-header" hidden>月祭點數</th>
+                                            <th id="product-breakdown-points-header" hidden>盈月值</th>
                                         </tr>
                                     </thead>
                                     <tbody id="product-breakdown-tbody"></tbody>
@@ -414,7 +414,7 @@
                 <h3>模型</h3>
                 <p>每個方案都是一個同時涵蓋所有配方與設施的混合整數最佳化問題，使用 <a href="https://highs.dev" target="_blank" rel="noopener">HiGHS</a> 求解。你的設施等級與模組所解鎖的每個配方，都會得到一個生產速率與整數單位數：作物對應田地，加工品對應機器。</p>
                 <div class="math-block">\[ \max \ \sum_i p_i \, s_i \;-\sum_r c_r \, b_r \]</div>
-                <p>其中，\(s_i\) 是每秒出售的物品數量，\(p_i\) 是售價，\(c_r\) 是作物種子成本。月祭活動期間，活動作物的種子改用月光小麥支付，計算時視為供應充足。模型同時受到以下限制：</p>
+                <p>其中，\(s_i\) 是每秒出售的物品數量，\(p_i\) 是售價，\(c_r\) 是作物種子成本。盈月豐收節期間，活動作物的種子改用月芒穗支付，計算時視為供應充足。模型同時受到以下限制：</p>
                 <ul>
                     <li><strong>整數單位。</strong> \(b_r t_r \le u_r\)，其中 \(u_r\) 必須是整數，\(t_r\) 是每批次所需時間；一個單位會持續執行同一個配方。</li>
                     <li><strong>物品平衡。</strong> 生產出的物品必須足以供其他配方使用與直接出售；高速版本與一般版本會產出相同物品。</li>
@@ -440,7 +440,7 @@
                 <p>模型會找出每天可以維持的最高升級速度 \(\lambda\)，因此升級所需時間為 \(1/\lambda\) 天。低階材料也可以透過木工台與煙囪窯逐級加工，因此庫存會沿著材料鏈折算。</p>
 
                 <h3>優先順序</h3>
-                <p>計算器會依照你設定的優先順序逐項求解。每一步盡可能滿足當前目標，同時保留前面目標已取得的結果；最後再把剩餘產能用於家園幣。Aniimo 經驗、Aniipod 與月祭點數也可以作為獨立目標。</p>
+                <p>計算器會依照你設定的優先順序逐項求解。每一步盡可能滿足當前目標，同時保留前面目標已取得的結果；最後再把剩餘產能用於家園幣。Aniimo 經驗、Aniipod 與盈月值也可以作為獨立目標。</p>
 
                 <h3>達成目標所需時間</h3>
                 <p>每項商品會在第一批完成所有前置材料後開始累積，也就是它的「前置時間」；之後按照穩定產率增加：</p>
