@@ -2872,3 +2872,42 @@ tr:hover .skip-row,
         animation: none;
     }
 }
+
+/* --- 家園設定檔 --------------------------------------------------------------------- */
+.home-profile-bar {
+    margin: 0 0 1.2rem;
+    padding: .9rem 1rem;
+    border: 1px solid var(--border, #d9dde3);
+    border-radius: 10px;
+    background: var(--card-bg, rgba(127,127,127,.05));
+}
+.home-profile-copy {
+    display: flex;
+    align-items: baseline;
+    gap: .6rem;
+    flex-wrap: wrap;
+    margin-bottom: .65rem;
+}
+.home-profile-controls {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.home-profile-controls select,
+.home-profile-controls input {
+    min-height: 38px;
+    padding: .45rem .6rem;
+    border: 1px solid var(--border, #d9dde3);
+    border-radius: 7px;
+    background: var(--input-bg, #fff);
+    color: inherit;
+}
+.home-profile-controls select { min-width: 210px; }
+.home-profile-controls input { min-width: 150px; }
+#home-profile-status { margin: .55rem 0 0; }
+@media (max-width: 700px) {
+    .home-profile-controls > * { flex: 1 1 140px; }
+    .home-profile-controls button { flex: 1 1 auto; }
+    .home-profile-controls select { min-width: 0; }
+}

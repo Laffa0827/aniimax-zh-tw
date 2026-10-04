@@ -6,6 +6,7 @@ import {
     LEVEL_UP_COSTS, LEVEL_UP_CHAINS, SPECIAL_RECIPES, SEASON, ANIIPOD_TIERS, PERSONALITY_PAIRS, personalityLetter, opposedPersonality,
 } from './facility-config.js';
 import { createShareUrl, readShareHash, urlWithoutShare } from './share-config.js';
+import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js';
 
 let wasmReady = false;
 
@@ -43,7 +44,7 @@ function initWorker() {
     };
     worker.onerror = (event) => {
         console.error('Worker error:', event.message || event);
-        pendingWorkerRequests.forEach(pending => pending.reject(new Error(event.message || 'The planner stopped')));
+        pendingWorkerRequests.forEach(pending => pending.reject(new Error(event.message || '最佳化器已停止執行')));
         pendingWorkerRequests.clear();
     };
 }
@@ -52,7 +53,7 @@ function initWorker() {
 // older Calculate click that would otherwise hold up the new one, and starts a fresh worker.
 function restartWorker() {
     worker.terminate();
-    pendingWorkerRequests.forEach(pending => pending.reject(new Error('Cancelled by a newer calculation')));
+    pendingWorkerRequests.forEach(pending => pending.reject(new Error('已被新的計算取消')));
     pendingWorkerRequests.clear();
     initWorker();
 }
@@ -156,7 +157,7 @@ function ensurePlanFor(setup) {
         if (type === 'progress') return;
         done(ok ? JSON.parse(result) : { success: false, error });
     };
-    solver.onerror = (event) => done({ success: false, error: event.message || 'The planner stopped' });
+    solver.onerror = (event) => done({ success: false, error: event.message || '最佳化器已停止執行' });
     // The levels are read afresh: the player may have changed which abilities they have since
     // the plan this input came from.
     solver.postMessage({ id: 1, type: 'find_plan', payload: JSON.stringify({ ...lastPlanInput, ...aniimoInput(setup) }) });
@@ -204,19 +205,19 @@ let lastGoalResult = null;
 // Display name for each optimizable currency. Coins are the only one since the full release
 // removed Bud Tickets; kept as a map so a plan's `currency` still resolves to its label.
 const CURRENCY_LABELS = {
-    coins: 'Home Coins',
-    aniimo_exp: 'Aniimo EXP',
-    aniipods: 'Aniipods',
+    coins: '家園幣',
+    aniimo_exp: 'Aniimo 經驗',
+    aniipods: 'Aniipod',
 };
 
 // Multiplier from the solver's native per-second rate to each display unit, and the short suffix
 // shown next to the currency label (e.g. "Coins/hour"). "Your Rate" is stored and computed
 // per-second throughout; this only affects how that one number is displayed.
 const RATE_UNIT_SECONDS = {
-    second: { multiplier: 1, suffix: '/sec' },
-    minute: { multiplier: 60, suffix: '/min' },
-    hour: { multiplier: 3600, suffix: '/hour' },
-    day: { multiplier: 86400, suffix: '/day' },
+    second: { multiplier: 1, suffix: '/秒' },
+    minute: { multiplier: 60, suffix: '/分鐘' },
+    hour: { multiplier: 3600, suffix: '/小時' },
+    day: { multiplier: 86400, suffix: '/天' },
 };
 
 // Per-facility owned tiers: `{ 'Farmland': [{count: 5, level: 3}, {count: 4, level: 5}], ... }`.
@@ -248,16 +249,16 @@ function renderTierRows(name) {
     container.innerHTML = tiers.map((tier, i) => `
         <div class="facility-inputs tier-row" data-tier-index="${i}">
             <div class="input-field">
-                <label>Count</label>
+                <label>數量</label>
                 <input type="number" class="tier-count" value="${tier.count}" min="0" max="999">
             </div>
             ${f.hasLevels === false ? '' : `
             <div class="input-field">
-                <label>Level</label>
+                <label>等級</label>
                 <input type="number" class="tier-level" value="${tier.level}" min="1" max="10">
             </div>
             `}
-            ${showRemove ? '<button type="button" class="tier-remove-btn" title="Remove this level">&times;</button>' : ''}
+            ${showRemove ? '<button type="button" class="tier-remove-btn" title="移除此等級">&times;</button>' : ''}
         </div>
     `).join('');
 }
@@ -271,14 +272,14 @@ function renderFacilityCards() {
     grid.innerHTML = FACILITY_CATEGORIES.map(category => {
         const cards = FACILITIES.filter(f => f.category === category).map(f => `
             <div class="facility-card">
-                <h4>${f.name} <span class="info-icon" data-tooltip="${f.tooltip}">?</span></h4>
+                <h4>${prettyFacility(f.name)} <span class="info-icon" data-tooltip="${zhTooltip(f.tooltip)}">?</span></h4>
                 <div class="facility-tiers" data-facility="${f.name}"></div>
-                ${f.hasLevels === false ? '' : '<button type="button" class="add-tier-btn" data-facility="' + f.name + '">+ Add level</button>'}
+                ${f.hasLevels === false ? '' : '<button type="button" class="add-tier-btn" data-facility="' + f.name + '">+ 新增等級</button>'}
             </div>
         `).join('');
         return `
             <div class="facility-category">
-                <h4 class="facility-category-title">${category}</h4>
+                <h4 class="facility-category-title">${zhCategory(category)}</h4>
                 <div class="facilities-grid">${cards}</div>
             </div>
         `;
@@ -287,7 +288,7 @@ function renderFacilityCards() {
 }
 
 // Delegated handlers for the facility grid, covering tier rows added/removed after initial
-// render: editing a Count/Level input updates `facilityTiers` and persists it; "+ Add level"
+// render: editing a Count/Level input updates `facilityTiers` and persists it; "+ 新增等級"
 // appends a new tier (guessing the next level up from the highest owned, capped at 10); "×"
 // removes a tier. Attach once, on the grid container, rather than per-row.
 function attachFacilityTierHandlers() {
@@ -372,7 +373,7 @@ function readStorage() {
         const raw = localStorage.getItem(STORAGE_KEY);
         return raw ? migrateSavedConfig(JSON.parse(raw)) : null;
     } catch (e) {
-        console.warn('Could not load saved inputs from localStorage:', e);
+        console.warn('無法從瀏覽器載入已儲存設定：', e);
         return null;
     }
 }
@@ -438,10 +439,10 @@ function saveInputsToStorage() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(currentConfig()));
         const imported = clearShareHash();
         document.getElementById('share-config-status').textContent = imported
-            ? 'Your changes are saved in this browser.' : '';
+            ? '你的變更已儲存在此瀏覽器。' : '';
         document.getElementById('share-config-result').hidden = true;
     } catch (e) {
-        console.warn('Could not save inputs to localStorage:', e);
+        console.warn('無法將設定儲存到瀏覽器：', e);
     }
 }
 
@@ -456,13 +457,13 @@ async function shareCurrentConfig() {
         link.select();
         try {
             await navigator.clipboard.writeText(link.value);
-            status.textContent = 'Link copied. It includes your current setup.';
+            status.textContent = '連結已複製，包含你目前的家園設定。';
         } catch (_) {
-            status.textContent = 'Copy the link above to share your setup.';
+            status.textContent = '複製上方連結即可分享你的設定。';
         }
     } catch (error) {
-        status.textContent = 'Could not create a share link for this setup.';
-        console.warn('Could not create share link:', error);
+        status.textContent = '無法建立此設定的分享連結。';
+        console.warn('無法建立分享連結：', error);
     }
 }
 
@@ -527,10 +528,133 @@ function clearSavedInputs() {
     try {
         localStorage.removeItem(STORAGE_KEY);
     } catch (e) {
-        console.warn('Could not clear saved inputs from localStorage:', e);
+        console.warn('無法清除瀏覽器中的已儲存設定：', e);
     }
     clearShareHash();
     window.location.reload();
+}
+
+// Named local profiles sit on top of the existing auto-saved "current" config. They never
+// enter the solver and are intentionally browser-local, so the existing share links remain
+// unchanged. Loading a profile writes it to the current config and reloads the page; this keeps
+// every existing initialization path (facility tiers, roster, priorities, seasonal options) in
+// one place instead of trying to partially mutate a live solve.
+const PROFILE_STORAGE_KEY = 'aniimax-home-profiles-v1';
+
+function readHomeProfiles() {
+    try {
+        const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+        const data = raw ? JSON.parse(raw) : [];
+        return Array.isArray(data) ? data.filter(p => p && typeof p === 'object' && typeof p.name === 'string' && p.config) : [];
+    } catch (e) {
+        console.warn('無法讀取家園設定檔：', e);
+        return [];
+    }
+}
+
+function writeHomeProfiles(profiles) {
+    try {
+        localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profiles));
+        return true;
+    } catch (e) {
+        console.warn('無法儲存家園設定檔：', e);
+        return false;
+    }
+}
+
+function renderHomeProfiles() {
+    const select = document.getElementById('home-profile-select');
+    const del = document.getElementById('home-profile-delete');
+    if (!select || !del) return;
+    const current = select.value;
+    const profiles = readHomeProfiles();
+    select.innerHTML = '<option value="">目前設定（瀏覽器自動儲存）</option>' + profiles
+        .map((p, i) => `<option value="${i}">${escapeText(p.name)}</option>`).join('');
+    if (profiles.some((_, i) => String(i) === current)) select.value = current;
+    del.disabled = select.value === '';
+}
+
+function profileStatus(message) {
+    const el = document.getElementById('home-profile-status');
+    if (el) el.textContent = message;
+}
+
+function attachHomeProfileHandlers() {
+    const select = document.getElementById('home-profile-select');
+    const name = document.getElementById('home-profile-name');
+    const save = document.getElementById('home-profile-save');
+    const load = document.getElementById('home-profile-load');
+    const del = document.getElementById('home-profile-delete');
+    if (!select || !name || !save || !load || !del) return;
+
+    renderHomeProfiles();
+    select.addEventListener('change', () => {
+        del.disabled = select.value === '';
+        if (select.value !== '') {
+            const profile = readHomeProfiles()[Number(select.value)];
+            if (profile) name.value = profile.name;
+        }
+    });
+
+    save.addEventListener('click', () => {
+        const profileName = name.value.trim();
+        if (!profileName) {
+            profileStatus('請先輸入設定檔名稱。');
+            name.focus();
+            return;
+        }
+        const profiles = readHomeProfiles();
+        const existing = profiles.findIndex(p => p.name === profileName);
+        const entry = { name: profileName, savedAt: new Date().toISOString(), config: currentConfig() };
+        if (existing >= 0) profiles[existing] = entry;
+        else profiles.push(entry);
+        if (!writeHomeProfiles(profiles)) {
+            profileStatus('無法儲存設定檔，可能是瀏覽器儲存空間不足。');
+            return;
+        }
+        renderHomeProfiles();
+        const index = profiles.findIndex(p => p.name === profileName);
+        select.value = String(index);
+        del.disabled = false;
+        profileStatus(existing >= 0 ? `已更新「${profileName}」。` : `已儲存「${profileName}」。`);
+    });
+
+    load.addEventListener('click', () => {
+        if (select.value === '') {
+            profileStatus('請先選擇要載入的設定檔。');
+            return;
+        }
+        const profile = readHomeProfiles()[Number(select.value)];
+        if (!profile) {
+            renderHomeProfiles();
+            profileStatus('找不到這個設定檔。');
+            return;
+        }
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(migrateSavedConfig(profile.config)));
+            clearShareHash();
+            window.location.reload();
+        } catch (e) {
+            profileStatus('無法載入設定檔。');
+            console.warn('無法載入家園設定檔：', e);
+        }
+    });
+
+    del.addEventListener('click', () => {
+        if (select.value === '') return;
+        const profiles = readHomeProfiles();
+        const index = Number(select.value);
+        const removed = profiles[index];
+        if (!removed) return;
+        profiles.splice(index, 1);
+        if (!writeHomeProfiles(profiles)) {
+            profileStatus('無法刪除設定檔。');
+            return;
+        }
+        name.value = '';
+        renderHomeProfiles();
+        profileStatus(`已刪除「${removed.name}」。`);
+    });
 }
 
 // Initialize the worker and its wasm module.
@@ -546,7 +670,7 @@ async function initWasm() {
         console.log(`Aniimax v${version} loaded successfully`);
     } catch (error) {
         console.error('Failed to initialize WASM:', error);
-        showError('Failed to load the optimizer. Please refresh the page.');
+        showError('無法載入最佳化器，請重新整理頁面。');
     }
 }
 
@@ -567,7 +691,7 @@ function selectedHomeLevel() {
 function populateHomeLevels() {
     const options = [];
     for (let level = 1; level <= MAX_HOME_LEVEL; level++) {
-        options.push(`<option value="${level}">${level}${level === MAX_HOME_LEVEL ? ' (everything unlocked)' : ''}</option>`);
+        options.push(`<option value="${level}">${level}${level === MAX_HOME_LEVEL ? ' （全部解鎖）' : ''}</option>`);
     }
     for (const id of ['home-level', 'fill-level']) {
         const select = document.getElementById(id);
@@ -585,20 +709,20 @@ function renderSimpleSummary() {
     const built = FACILITIES
         .map(f => ({ name: f.name, tier: facilities[f.name][0], hasLevels: f.hasLevels !== false }))
         .filter(({ tier }) => tier.count > 0)
-        .map(({ name, tier, hasLevels }) => chip(`${tier.count}×`, name, hasLevels ? `Lv.${tier.level}` : ''))
+        .map(({ name, tier, hasLevels }) => chip(`${tier.count}×`, prettyFacility(name), hasLevels ? `Lv.${tier.level}` : ''))
         .join('');
     const moduleChips = [
-        ['Ecological Module', modules.ecological_module],
-        ['Kitchen Module', modules.kitchen_module],
-        ['Resource Detector', modules.resource_detector],
-        ['Crafting Module', modules.crafting_module],
-    ].map(([name, level]) => chip('', name, level > 0 ? `Lv.${level}` : 'not yet')).join('');
+        ['生態模組', modules.ecological_module],
+        ['廚房模組', modules.kitchen_module],
+        ['資源探測器', modules.resource_detector],
+        ['製作模組', modules.crafting_module],
+    ].map(([name, level]) => chip('', name, level > 0 ? `Lv.${level}` : '尚未解鎖')).join('');
     const kinds = FACILITIES.filter(f => facilities[f.name][0].count > 0).length;
-    document.getElementById('simple-summary-title').textContent = `${kinds} facilities and 4 modules at RV ${homeLevel}`;
+    document.getElementById('simple-summary-title').textContent = `RV ${homeLevel}：${kinds} 種設施、4 個模組`;
     document.getElementById('simple-summary').innerHTML = `
-        <p class="assume-title">Facilities</p>
+        <p class="assume-title">設施</p>
         <div class="chip-grid">${built}</div>
-        <p class="assume-title">Modules</p>
+        <p class="assume-title">模組</p>
         <div class="chip-grid">${moduleChips}</div>`;
 }
 
@@ -689,10 +813,10 @@ let rankingsBySetup = {};
 let ranking = null;
 
 const MODULE_NAMES = {
-    ecological_module: 'Ecological Module',
-    kitchen_module: 'Kitchen Module',
-    resource_detector: 'Resource Detector',
-    crafting_module: 'Crafting Module',
+    ecological_module: '生態模組',
+    kitchen_module: '廚房模組',
+    resource_detector: '資源探測器',
+    crafting_module: '製作模組',
 };
 
 function stopRanking() {
@@ -751,7 +875,7 @@ function improvementCandidates(base, setup) {
         if (recipe.facility && !owns(recipe.facility)) continue;
         candidates.push({
             kind: 'Recipes',
-            label: recipe.note ? `Recipe Note: ${prettyItem(recipe.name)}` : `Unlock ${prettyItem(recipe.name)}`,
+            label: recipe.note ? `配方備註：${prettyItem(recipe.name)}` : `解鎖 ${prettyItem(recipe.name)}`,
             input: { ...base, exclude: base.exclude.filter(name => name !== recipe.name) },
         });
     }
@@ -760,7 +884,7 @@ function improvementCandidates(base, setup) {
         if (!base.exclude.includes(name)) continue;
         candidates.push({
             kind: 'Recipes',
-            label: `Unskip ${prettyItem(name)}`,
+            label: `恢復生產 ${prettyItem(name)}`,
             input: { ...base, exclude: base.exclude.filter(n => n !== name) },
         });
     }
@@ -946,10 +1070,10 @@ function improvementGain(result) {
                 score: 1 + (before ? (before - after) / before : 1),
                 text: before
                     ? `${about}−${formatDuration(before - after)} level-up (${formatDuration(after)})`
-                    : `Level-up in ${about}${formatDuration(after)}`,
+                    : `升級所需時間：${about}${formatDuration(after)}`,
             };
         }
-        const label = ranking.measure === 'coins' ? 'Home Coins' : priorityLabel(ranking.measure, planContext?.aniipod);
+        const label = ranking.measure === 'coins' ? '家園幣' : priorityLabel(ranking.measure, planContext?.aniipod);
         const added = `+${formatRate((result.top - base.top) * multiplier)}${suffix}`;
         return {
             score: 1 + (base.top > 0 ? (result.top - base.top) / base.top : 1),
@@ -961,7 +1085,7 @@ function improvementGain(result) {
         const gain = (coins.value - coins.base) / coins.base;
         return {
             score: gain,
-            text: `${about}+${formatPercent(gain)} Home Coins (+${formatRate((coins.value - coins.base) * multiplier)}${suffix})`,
+            text: `${about}+${formatPercent(gain)} 家園幣 (+${formatRate((coins.value - coins.base) * multiplier)}${suffix})`,
         };
     }
     return null;
@@ -983,9 +1107,9 @@ function renderImprovements() {
     card.style.display = 'block';
     const checked = ranking.results.filter(Boolean).length;
     const total = ranking.candidates.length;
-    const within = ranking.homeLevel ? ` Within RV ${ranking.homeLevel} limits.` : '';
-    const by = ranking.measure === 'level_up' ? 'level-up time, then Home Coins'
-        : ranking.measure === 'coins' ? 'Home Coins' : `${priorityLabel(ranking.measure, planContext?.aniipod)}, then Home Coins`;
+    const within = ranking.homeLevel ? `（限制在 RV ${ranking.homeLevel} 範圍內）` : '';
+    const by = ranking.measure === 'level_up' ? '升級所需時間，其次為家園幣'
+        : ranking.measure === 'coins' ? '家園幣' : `${priorityLabel(ranking.measure, planContext?.aniipod)}，其次為家園幣`;
     // One row per change, or per group: the least of it that gets the most it can (see
     // `improvementCandidates`).
     const best = new Map();
@@ -998,10 +1122,10 @@ function renderImprovements() {
     });
     const rows = [...best.values()].sort((a, b) => b.gain.score - a.gain.score);
     const options = new Set(ranking.candidates.map((c, i) => c.group || `#${i}`)).size;
-    const status = total === 0 ? `Nothing left to unlock or upgrade.${within}`
-        : !ranking.done ? `Checking ${checked} of ${total}…${within}`
-        : rows.length === 0 ? `No improvements found (${options} checked).${within}`
-        : `Ranked by ${by}. ${rows.length} of ${options} help.${within}`;
+    const status = total === 0 ? `沒有可解鎖或升級的項目。${within}`
+        : !ranking.done ? `正在檢查 ${checked} / ${total}…${within}`
+        : rows.length === 0 ? `沒有找到改善方案（已檢查 ${options} 項）。${within}`
+        : `依${by}排序；${rows.length} / ${options} 項有幫助。${within}`;
     // The status line opens what was checked. The card is rebuilt as each result comes in; keep
     // the list open if the player opened it.
     const open = !!document.querySelector('#improve-list .improve-checked')?.open;
@@ -1033,7 +1157,7 @@ function improvementsChecked(best, status, open) {
         const found = best.get(key);
         const outcome = found
             ? `<span class="improve-gain">${found.candidate.level != null && levels.length > 1 ? `Lv.${found.candidate.level}: ` : ''}${found.gain.text}</span>`
-            : `<span class="improve-none">${done ? 'no gain' : 'checking…'}</span>`;
+            : `<span class="improve-none">${done ? '沒有提升' : '檢查中……'}</span>`;
         if (!kinds.has(group.kind)) kinds.set(group.kind, []);
         kinds.get(group.kind).push(`<li><span>${name}</span>${outcome}</li>`);
     }
@@ -1240,7 +1364,7 @@ function renderHomelandLayout(plan) {
     stopLayoutSim();
     setStep('layout', 'start');
     card.style.display = 'block';
-    document.getElementById('layout-summary').textContent = 'Laying out…';
+    document.getElementById('layout-summary').textContent = '正在配置家園……';
     document.getElementById('layout-diagram').innerHTML = '';
     // Worked out in a worker of its own: a large homeland takes a few seconds.
     const { pieces, unplaced } = homelandPieces(plan, lastPlanInput);
@@ -1263,12 +1387,12 @@ function renderHomelandLayout(plan) {
             return piece.cluster ? `${piece.buildings[0].facility} and its plots` : piece.members[0].facility;
         }))];
         const notes = [
-            noRoom.length ? `No room found in RV ${homeLevel}'s plots for: ${noRoom.join(', ')}.` : '',
-            unplaced.length ? `Not placed, size unknown: ${unplaced.join(', ')}.` : '',
+            noRoom.length ? `RV ${homeLevel} 的土地空間不足，無法放置：${noRoom.map(prettyFacility).join('、')}。` : '',
+            unplaced.length ? `未放置（尺寸未知）：${unplaced.map(prettyFacility).join('、')}。` : '',
         ].filter(Boolean).join(' ');
         document.getElementById('layout-summary').textContent = `${trips > 0
-            ? `${formatNumber(Math.round(trips))} trips/hour to the Storage Unit, ${(walked / trips).toFixed(1)} tiles each on average, in the ${cells.length} plot${cells.length === 1 ? '' : 's'} open at RV ${homeLevel}.`
-            : 'Nothing in this plan is carried to the Storage Unit.'}${notes ? ` ${notes}` : ''}`;
+            ? `每小時約 ${formatNumber(Math.round(trips))} 次搬運至儲存箱，平均每次 ${ (walked / trips).toFixed(1) } 格；RV ${homeLevel} 目前開放 ${cells.length} 塊土地。`
+            : '此方案沒有需要搬運至儲存箱的產物。'}${notes ? ` ${notes}` : ''}`;
         lastLayout = { layout, homeLevel };
         drawLayout(lastLayout);
         setStep('layout', 'done');
@@ -1277,7 +1401,7 @@ function renderHomelandLayout(plan) {
         console.error('Homeland layout failed:', event.message || event);
         if (runId !== layoutRunId) return;
         stopLayout();
-        document.getElementById('layout-summary').textContent = 'The layout couldn\'t be worked out.';
+        document.getElementById('layout-summary').textContent = '無法完成家園配置。';
         setStep('layout', 'fail');
     };
     layoutWorker.postMessage({ pieces, cells: cells.map(({ x, y, w, h }) => ({ x, y, w, h })) });
@@ -1316,7 +1440,7 @@ function homelandSvg(layout, homeLevel) {
         const open = p.number <= homeLevel;
         // An open plot is named by its number; one still to come by the RV level that opens it.
         return `<g class="layout-plot${open ? '' : ' locked'}"><rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" />
-            <text x="${p.x + 0.6}" y="${p.y + 0.9}" font-size="0.9">${open ? 'Plot' : 'RV'} ${p.number}</text></g>`;
+            <text x="${p.x + 0.6}" y="${p.y + 0.9}" font-size="0.9">${open ? '土地' : 'RV'} ${p.number}</text></g>`;
     }).join('');
     const lines = [];
     for (let x = minX; x <= maxX; x++) lines.push(`<line x1="${x}" y1="${minY}" x2="${x}" y2="${maxY}" />`);
@@ -1326,8 +1450,8 @@ function homelandSvg(layout, homeLevel) {
         const color = layoutColor(m);
         const away = Math.hypot(m.x + m.w / 2 - (layout.storage.x + layout.storage.w / 2), m.y + m.h / 2 - (layout.storage.y + layout.storage.h / 2));
         const tip = tipAttrs(m.facility, {
-            detail: m.jobs ? m.jobs.map(j => prettyItem(j.item)).join(', ') : m.crop ? prettyItem(m.crop) : m.building && m.mode ? m.mode : 'Idle',
-            stats: m.weight > 0 ? `${formatRate(m.weight)} trips/hour · ${away.toFixed(1)} tiles from storage` : '',
+            detail: m.jobs ? m.jobs.map(j => prettyItem(j.item)).join(', ') : m.crop ? prettyItem(m.crop) : m.building && m.mode ? m.mode : '閒置',
+            stats: m.weight > 0 ? `${formatRate(m.weight)} 次搬運/小時 · 距離儲存箱 ${away.toFixed(1)} 格` : '',
             color,
         });
         const label = Math.min(m.w, m.h) >= 1.5 ? `<text x="${m.x + m.w / 2}" y="${m.y + m.h / 2}" font-size="${Math.min(0.8, m.w / 3)}">${initialsOf(m.facility)}</text>` : '';
@@ -1361,7 +1485,7 @@ function homelandSvg(layout, homeLevel) {
     const rings = flowList.map(f => `<g class="layout-ring" transform="translate(${f.rx.toFixed(2)} ${f.ry.toFixed(2)})">
             <circle r="${f.ring.toFixed(2)}" class="ring-track" /><circle r="${f.ring.toFixed(2)}" class="ring-fill" pathLength="1" stroke-dasharray="0 1" transform="rotate(-90)" /></g>`).join('');
     const totalTrips = layout.pieces.flatMap(p => p.members).reduce((sum, m) => sum + (m.weight || 0), 0);
-    return `<svg class="layout-svg" viewBox="${minX} ${minY} ${maxX - minX} ${maxY - minY}" role="img" aria-label="Homeland layout">
+    return `<svg class="layout-svg" viewBox="${minX} ${minY} ${maxX - minX} ${maxY - minY}" role="img" aria-label="家園配置圖">
         <defs><pattern id="layout-locked" width="1" height="1" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <line x1="0" y1="0" x2="0" y2="1" class="layout-hatch" /></pattern></defs>
         <g class="env-grid">${lines.join('')}</g>
@@ -1371,7 +1495,7 @@ function homelandSvg(layout, homeLevel) {
         <g class="layout-coverage-edges" pointer-events="none">${coverageEdges}</g>
         <g class="layout-rings" pointer-events="none">${rings}</g>
         <g class="layout-flows" pointer-events="none">${flows}<g class="layout-dots"></g></g>
-        <g class="layout-piece layout-storage-unit" ${tipAttrs('Storage Unit', { detail: 'Where everything is carried', stats: totalTrips > 0 ? `${formatRate(totalTrips)} trips/hour` : '' })}><rect x="${s.x + 0.04}" y="${s.y + 0.04}" width="${s.w - 0.08}" height="${s.h - 0.08}" rx="0.2" class="layout-storage" />
+        <g class="layout-piece layout-storage-unit" ${tipAttrs('儲存箱', { detail: '所有物品最終搬運到這裡', stats: totalTrips > 0 ? `${formatRate(totalTrips)} 次搬運/小時` : '' })}><rect x="${s.x + 0.04}" y="${s.y + 0.04}" width="${s.w - 0.08}" height="${s.h - 0.08}" rx="0.2" class="layout-storage" />
         <text x="${s.x + s.w / 2}" y="${s.y + s.h / 2}" font-size="0.8" class="layout-storage-text">SU</text></g>
     </svg>`;
 }
@@ -1636,11 +1760,11 @@ function startProgress(input, runId) {
     // and Kiln time) are one step, and every plan's last is its final solve and the re-check
     // of it against every limit: the worker's steps map onto these (see `setStep`).
     const steps = [
-        ...priorities.map(target => ({ key: `priority:${target}`, label: `Most ${priorityLabel(target, planContext.aniipod)}` })),
-        { key: 'plan', label: levelUp ? 'Fastest Level-Up' : priorities.length ? "Home Coins with What's Left" : 'Most Home Coins' },
-        { key: 'layout', label: 'Homeland Layout' },
-        { key: 'improve', label: 'Opportunities' },
-        { key: 'minimum', label: 'Minimum Team Plan' },
+        ...priorities.map(target => ({ key: `priority:${target}`, label: `最多${priorityLabel(target, planContext.aniipod)}` })),
+        { key: 'plan', label: levelUp ? '最快升級' : priorities.length ? '剩餘時間賺取最多家園幣' : '最多家園幣' },
+        { key: 'layout', label: '家園配置圖' },
+        { key: 'improve', label: '提升機會' },
+        { key: 'minimum', label: '最低需求隊伍' },
     ];
     progress = { runId, steps: steps.map(step => ({ ...step, state: 'pending' })) };
     renderProgress();
@@ -1664,7 +1788,7 @@ function setStep(key, state, detail, proven) {
     }
     let step = progress.steps.find(s => s.key === key);
     if (!step && key === 'backup') {
-        step = { key, label: 'Backup Planner', state: 'pending' };
+        step = { key, label: '備用最佳化器', state: 'pending' };
         progress.steps.splice(progress.steps.findIndex(s => s.key === 'layout'), 0, step);
     }
     if (!step) return;
@@ -1690,8 +1814,8 @@ const PROVEN_MEANS = 'No plan the model allows does better. Some of its options,
 function searchNote(proven) {
     if (proven === undefined) return '';
     return proven
-        ? `<span title="${PROVEN_MEANS}">proven best</span>`
-        : '<span title="The solver ran out of time before it could prove nothing does better.">best found in time</span>';
+        ? `<span title="${PROVEN_MEANS}">已證明最佳</span>`
+        : '<span title="最佳化器在證明沒有更好方案前已達到時間限制。">限定時間內最佳</span>';
 }
 
 // Once the plan is back, any solve that never ran (a level-up out of reach skips the last one;
@@ -1713,12 +1837,12 @@ function renderProgress() {
     }
     card.style.display = 'block';
     const icon = state => ({
-        running: '<span class="step-spinner" aria-label="Running"></span>',
-        done: '<span class="step-icon done" aria-label="Done">✓</span>',
-        fail: '<span class="step-icon fail" aria-label="Failed">✕</span>',
-        skipped: '<span class="step-icon skipped" aria-label="Skipped">–</span>',
-    }[state] || '<span class="step-icon pending" aria-label="Waiting">•</span>');
-    const time = ms => ms == null ? '' : ms < 1000 ? `${Math.max(1, Math.round(ms))} ms` : `${(ms / 1000).toFixed(1)} s`;
+        running: '<span class="step-spinner" aria-label="執行中"></span>',
+        done: '<span class="step-icon done" aria-label="完成">✓</span>',
+        fail: '<span class="step-icon fail" aria-label="失敗">✕</span>',
+        skipped: '<span class="step-icon skipped" aria-label="已略過">–</span>',
+    }[state] || '<span class="step-icon pending" aria-label="等待中">•</span>');
+    const time = ms => ms == null ? '' : ms < 1000 ? `${Math.max(1, Math.round(ms))} 毫秒` : `${(ms / 1000).toFixed(1)} 秒`;
     card.innerHTML = `<ol class="progress-steps">${progress.steps.map(step => {
         const finished = step.state === 'done' || step.state === 'fail';
         const note = [step.detail, finished ? searchNote(step.proven) : '', finished ? time(step.ms) : ''].filter(Boolean).join(' · ');
@@ -1768,28 +1892,28 @@ function renderRoster() {
     const cards = roster.map((aniimo, i) => {
         const abilities = Object.entries(aniimo.abilities).map(([ability, level]) => `
             <span class="roster-ability">${abilityTag(ability)}<span class="tabs level-picker">${[1, 2, 3, 4].map(l =>
-                `<label><input type="radio" name="roster-${i}-${ability}" data-level="${i}|${ability}" value="${l}"${l === level ? ' checked' : ''}> ${l}</label>`).join('')}</span><button type="button" class="roster-x" data-drop="${i}|${ability}" aria-label="Remove ${ability}" title="Remove ${ability}">✕</button></span>`).join('');
+                `<label><input type="radio" name="roster-${i}-${ability}" data-level="${i}|${ability}" value="${l}"${l === level ? ' checked' : ''}> ${l}</label>`).join('')}</span><button type="button" class="roster-x" data-drop="${i}|${ability}" aria-label="移除 ${zhAbility(ability)}" title="移除 ${zhAbility(ability)}">✕</button></span>`).join('');
         const missing = ABILITIES.map(a => a.name).filter(name => !(name in aniimo.abilities));
         const add = missing.length
-            ? `<select class="roster-add-ability" data-add="${i}" aria-label="Add an ability"><option value="">+ Ability</option>${missing.map(name => `<option>${name}</option>`).join('')}</select>`
+            ? `<select class="roster-add-ability" data-add="${i}" aria-label="新增能力"><option value="">＋能力</option>${missing.map(name => `<option>${name}</option>`).join('')}</select>`
             : '';
-        const personalities = PERSONALITY_PAIRS.map((pair, p) => `<span class="tabs level-picker roster-pair" role="radiogroup" aria-label="${pair.names.join(' or ')}">${pair.names.map((name, k) =>
-            `<label title="${name}"><input type="radio" name="roster-${i}-pair-${p}" data-personality="${i}|${p}" value="${name}"${aniimo.personalities[p] === name ? ' checked' : ''}> ${pair.letters[k]}</label>`).join('')}</span>`).join('');
+        const personalities = PERSONALITY_PAIRS.map((pair, p) => `<span class="tabs level-picker roster-pair" role="radiogroup" aria-label="${pair.names.map(zhPersonality).join(' 或 ')}">${pair.names.map((name, k) =>
+            `<label title="${zhPersonality(name)}"><input type="radio" name="roster-${i}-pair-${p}" data-personality="${i}|${p}" value="${name}"${aniimo.personalities[p] === name ? ' checked' : ''}> ${pair.letters[k]}</label>`).join('')}</span>`).join('');
         return `
             <div class="roster-card">
                 <div class="roster-head">
-                    <input type="text" class="roster-name" data-name="${i}" value="${escapeText(aniimo.name)}" placeholder="Aniimo ${i + 1}" aria-label="Name">
-                    <span class="roster-count" title="How many you have that are alike"><button type="button" data-count="${i}|-1" aria-label="One fewer">−</button><span>×${aniimo.count}</span><button type="button" data-count="${i}|1" aria-label="One more">+</button></span>
-                    <button type="button" class="roster-x" data-remove="${i}" aria-label="Remove this Aniimo" title="Remove">✕</button>
+                    <input type="text" class="roster-name" data-name="${i}" value="${escapeText(aniimo.name)}" placeholder="Aniimo ${i + 1}" aria-label="名稱">
+                    <span class="roster-count" title="你有幾隻相同的 Aniimo"><button type="button" data-count="${i}|-1" aria-label="減少一隻">−</button><span>×${aniimo.count}</span><button type="button" data-count="${i}|1" aria-label="增加一隻">+</button></span>
+                    <button type="button" class="roster-x" data-remove="${i}" aria-label="移除這隻 Aniimo" title="移除">✕</button>
                 </div>
                 <div class="roster-abilities">${abilities}${add}</div>
                 <div class="roster-personalities">${personalities}</div>
             </div>`;
     }).join('');
-    editor.innerHTML = `${cards || '<p class="hint small">No Aniimo yet. Add the ones you have, or start from the Best plan\'s team.</p>'}
+    editor.innerHTML = `${cards || '<p class="hint small">目前還沒有 Aniimo。請新增你擁有的 Aniimo，或從「最佳方案」的隊伍開始。</p>'}
         <div class="roster-actions">
-            <button type="button" class="skip-add-btn" data-roster="add">+ Add Aniimo</button>
-            ${lastBestTeam?.length ? '<button type="button" class="skip-add-btn" data-roster="from-best">Start from the Best team</button>' : ''}
+            <button type="button" class="skip-add-btn" data-roster="add">＋新增 Aniimo</button>
+            ${lastBestTeam?.length ? '<button type="button" class="skip-add-btn" data-roster="from-best">從最佳方案隊伍開始</button>' : ''}
         </div>`;
 }
 
@@ -1800,7 +1924,7 @@ function showRosterShortfall() {
     showSetupOnly();
     const anyAble = roster.some(a => a.count > 0 && Object.keys(a.abilities).length);
     // An empty roster's editor already says to add some.
-    document.getElementById('aniimo-collapsed-summary').textContent = anyAble ? 'No plan found with these Aniimo.' : '';
+    document.getElementById('aniimo-collapsed-summary').textContent = anyAble ? '找不到符合目前 Aniimo 配置的方案。' : '';
 }
 
 // Of the results, only the Aniimo card, emptied of the last plan's team: its setup may be what
@@ -1906,7 +2030,7 @@ function renderRosterSummary(plan) {
         const able = roster.map((a, i) => i).filter(i => (roster[i].abilities[ability] || 0) >= level);
         if (!able.length) return;
         const pick = able.reduce((a, b) => (busy[b] / roster[b].count < busy[a] / roster[a].count ? b : a));
-        const place = `${job} on ${facility}`;
+        const place = `${job}（${prettyFacility(facility)}）`;
         if (!where[pick].has(place)) where[pick].set(place, 1);
     });
     const have = roster.reduce((sum, a) => sum + a.count, 0);
@@ -1915,12 +2039,12 @@ function renderRosterSummary(plan) {
         const places = [...where[i]].map(([place, n]) => Number.isInteger(n) && n > 1 ? `${place} ×${n}` : place).join(', ');
         const abilities = Object.entries(aniimo.abilities).map(([ability, level]) => `${abilityTag(ability)} ${level}`).join(' ');
         const letters = aniimo.personalities.map(personalityLetter).join('');
-        return `<tr><td data-label="Aniimo">${rosterLabel(aniimo, i)}<div class="hint small">${abilities} · ${letters}</div></td><td data-label="How many">${aniimo.count}</td><td data-label="Busy on average">${busy[i].toFixed(1)}</td><td data-label="Where">${places || '<span class="hint small">idle</span>'}</td></tr>`;
+        return `<tr><td data-label="Aniimo">${rosterLabel(aniimo, i)}<div class="hint small">${abilities} · ${letters}</div></td><td data-label="數量">${aniimo.count}</td><td data-label="平均忙碌">${busy[i].toFixed(1)}</td><td data-label="工作位置">${places || '<span class="hint small">閒置</span>'}</td></tr>`;
     }).join('');
     document.getElementById('aniimo-summary').innerHTML = roster.length
-        ? `<table class="aniimo-table"><thead><tr><th>Aniimo</th><th>How many</th><th>Busy on average</th><th>Where</th></tr></thead><tbody>${rows}</tbody></table>
-           <p class="hint small">${working} of your ${have} Aniimo have work in this plan.</p>`
-        : '<p class="hint">Add the Aniimo you have under My Aniimo to plan with them.</p>';
+        ? `<table class="aniimo-table"><thead><tr><th>Aniimo</th><th>數量</th><th>平均忙碌</th><th>工作位置</th></tr></thead><tbody>${rows}</tbody></table>
+           <p class="hint small">你的 ${have} 隻 Aniimo 中，有 ${working} 隻會在此方案中工作。</p>`
+        : '<p class="hint">請在「我的 Aniimo」中加入你擁有的 Aniimo，才能讓計算器將它們納入方案。</p>';
     document.getElementById('aniimo-collapsed-summary').textContent = '';
     document.getElementById('aniimo-abilities').innerHTML = '';
     const count = document.getElementById('aniimo-count');
@@ -1930,7 +2054,7 @@ function renderRosterSummary(plan) {
     of.hidden = false;
     count.hidden = false;
     count.classList.remove('over');
-    count.title = `${working} of your ${have} Aniimo have work in this plan`;
+    count.title = `${working} / ${have} 隻 Aniimo 在此方案中有工作`;
 }
 
 // --- Season ----------------------------------------------------------------------------
@@ -1985,7 +2109,7 @@ let skippedRecipes = new Set();
 let recipeIndex = [];
 
 function recipeLabel(recipe) {
-    return `${prettyItem(recipe.name)} (${recipe.facility})`;
+    return `${prettyItem(recipe.name)} (${prettyFacility(recipe.facility)})`;
 }
 
 async function loadRecipeIndex() {
@@ -2017,7 +2141,7 @@ function renderSkippedRecipes() {
         .sort((a, b) => prettyItem(a).localeCompare(prettyItem(b)))
         .map(name => {
             const facility = facilityOf(name);
-            return `<span class="skip-chip">${escapeText(prettyItem(name))}${facility ? ` <span class="skip-chip-facility">${facility}</span>` : ''}<button type="button" data-unskip="${escapeText(name)}" aria-label="Stop skipping ${escapeText(prettyItem(name))}" title="Stop skipping">✕</button></span>`;
+            return `<span class="skip-chip">${escapeText(prettyItem(name))}${facility ? ` <span class="skip-chip-facility">${prettyFacility(facility)}</span>` : ''}<button type="button" data-unskip="${escapeText(name)}" aria-label="恢復生產 ${escapeText(prettyItem(name))}" title="恢復生產">✕</button></span>`;
         }).join('');
 }
 
@@ -2038,7 +2162,7 @@ function addSkipFromInput() {
         if (partial.length === 1) match = partial[0];
     }
     if (!match) {
-        input.setCustomValidity('Pick a recipe from the list.');
+        input.setCustomValidity('請從清單中選擇配方。');
         input.reportValidity();
         return;
     }
@@ -2126,7 +2250,7 @@ function levelPicker(group, chosen, ability, label) {
     return `<span class="tabs level-picker" role="radiogroup" aria-label="${label}">${[1, 2, 3, 4]
         .map(level => {
             const unheardOf = level > usual;
-            const mark = unheardOf ? ` class="unheard-of" title="No level-${level} ${ability} Aniimo is known in the game yet"` : '';
+            const mark = unheardOf ? ` class="unheard-of" title="遊戲目前尚未確認有 Lv.${level} ${zhAbility(ability)} Aniimo"` : '';
             const confirm = unheardOf ? ` data-confirm="${ability}"` : '';
             return `<label${mark}><input type="radio" name="${group}" value="${level}"${chosen === level ? ' checked' : ''}${confirm}> ${level}</label>`;
         })
@@ -2138,7 +2262,7 @@ function renderAbilityLevels() {
     const list = document.getElementById('ability-levels');
     if (!list) return;
     list.innerHTML = levelledAbilities().map(ability => {
-        return `<div class="ability-level">${abilityTag(ability)}${levelPicker(`level-${ability}`, bestAniimoLevel(ability), ability, `${ability} level`)}</div>`;
+        return `<div class="ability-level">${abilityTag(ability)}${levelPicker(`level-${ability}`, bestAniimoLevel(ability), ability, `${zhAbility(ability)} 等級`)}</div>`;
     }).join('');
 }
 
@@ -2149,23 +2273,18 @@ function showAniimoSetup() {
     document.getElementById('ability-levels').hidden = tab !== 'best';
     document.getElementById('roster-editor').hidden = tab !== 'custom';
     document.getElementById('aniimo-setup-hint').textContent = tab === 'custom'
-        ? 'The Aniimo you have. The plan shares their hours out, so it only counts on what they can do.'
-        : 'The best Aniimo you have of each ability.';
+        ? '你實際擁有的 Aniimo。方案會分配它們的工時，只依賴它們能執行的工作。'
+        : '每種能力使用你擁有的最佳 Aniimo。';
     if (tab === 'best') renderAbilityLevels();
     if (tab === 'custom') renderRoster();
     switchAniimoSetup();
 }
 
 const ITEM_NAMES = {
-    coins: 'Home Coins',
-    wood_block: 'Wood Blocks',
-    mineral_sand: 'Mineral Sand',
-    umbral_sweet_and_spicy_sauce: 'Umbral Sweet and Spicy Sauce',
-    coarse_sifted_ore: 'Coarse-Sifted Ore',
-    river_washed_stones: 'River-Washed Stones',
-    premium_river_washed_stones: 'Premium River-Washed Stones',
-    sugar_roasted_chestnuts: 'Sugar-Roasted Chestnuts',
-    flowers_in_a_bottle: 'Flowers in a Bottle',
+    ...ZH_TW.items,
+    coins: '家園幣',
+    wood_block: '木塊',
+    mineral_sand: '礦砂',
 };
 
 function isLevelUpStrategy() {
@@ -2177,11 +2296,11 @@ function isLevelUpStrategy() {
 // of each ticked one as the ones above it allow, then earns coins with what's left (see
 // `JsPlanInput::priorities` in wasm.rs).
 const PRIORITY_TARGETS = [
-    { id: 'coins', label: 'Home Coins' },
-    { id: 'aniimo_exp', label: 'Aniimo EXP' },
-    { id: 'aniipods', label: 'Aniipods' },
-    { id: 'Wood Blocks', label: 'Wood Blocks' },
-    { id: 'Mineral Sand', label: 'Mineral Sand' },
+    { id: 'coins', label: '家園幣' },
+    { id: 'aniimo_exp', label: 'Aniimo 經驗' },
+    { id: 'aniipods', label: 'Aniipod' },
+    { id: 'Wood Blocks', label: '木塊' },
+    { id: 'Mineral Sand', label: '礦砂' },
     { id: 'season_points', label: SEASON.points, season: true },
 ];
 
@@ -2234,7 +2353,7 @@ function renderPriorities() {
             <label class="priority-switch" title="${p.on ? 'On: the plan goes for this' : 'Off: the plan ignores this'}">
                 <input type="checkbox" role="switch" data-toggle="${i}" aria-label="${label}"${p.on ? ' checked' : ''}>
                 <span class="switch-track" aria-hidden="true"></span>
-                <span class="switch-text">${p.on ? 'On' : 'Off'}</span>
+                <span class="switch-text">${p.on ? '開啟' : '關閉'}</span>
             </label>
             <span class="priority-move">
                 <button type="button" data-move="${i}" data-to="${above}" data-by="-1" aria-label="Move ${label} up"${above < 0 ? ' disabled' : ''}>${ARROW_UP}</button>
@@ -2320,8 +2439,8 @@ function levelUpCost() {
 // Why the level-up can't be planned, or null if it can.
 function levelUpUnavailable() {
     const target = levelUpTarget();
-    if (target > MAX_HOME_LEVEL) return `RV ${MAX_HOME_LEVEL} is the top level, so there's no level-up to plan.`;
-    if (!LEVEL_UP_COSTS[target]) return `There's no level-up cost for RV ${target}.`;
+    if (target > MAX_HOME_LEVEL) return `RV ${MAX_HOME_LEVEL} 已是目前最高等級，沒有可規劃的升級。`;
+    if (!LEVEL_UP_COSTS[target]) return `目前沒有 RV ${target} 的升級成本資料。`;
     return null;
 }
 
@@ -2362,14 +2481,14 @@ function renderStrategy() {
     const stockDetails = document.getElementById('level-up-stock');
     const unavailable = levelUpUnavailable();
     if (unavailable) {
-        costEl.innerHTML = `<p class="level-up-note">${unavailable} Plans will go for the most Home Coins.</p>`;
+        costEl.innerHTML = `<p class="level-up-note">${unavailable} 此方案會以家園幣收益最大化為目標。</p>`;
         stockDetails.style.display = 'none';
         return;
     }
     const cost = levelUpCost();
     const chip = (amount, name) => `<div class="chip"><span><span class="chip-count">${formatNumber(amount)}</span> ${ITEM_NAMES[name] || prettyItem(name)}</span></div>`;
     costEl.innerHTML = `
-        <p class="assume-title">RV ${levelUpTarget()} costs</p>
+        <p class="assume-title">RV ${levelUpTarget()} 所需材料</p>
         <div class="chip-grid">${chip(cost.coins, 'coins')}${cost.items.map(([item, n]) => chip(n, item)).join('')}</div>`;
     stockDetails.style.display = '';
     document.getElementById('level-up-stock-grid').innerHTML = stockNames(cost).map(name => `
@@ -2447,24 +2566,24 @@ function renderLevelUp(plan) {
     const label = document.getElementById('level-up-label');
     const time = document.getElementById('level-up-time');
     const lines = document.getElementById('level-up-lines');
-    label.textContent = `RV ${context.target} level-up`;
+    label.textContent = `RV ${context.target} 升級`;
     const report = plan.level_up;
     if (context.unavailable) {
         time.textContent = '-';
-        lines.innerHTML = `<p class="level-up-note">${context.unavailable} This plan is for the most Home Coins.</p>`;
+        lines.innerHTML = `<p class="level-up-note">${context.unavailable} 此方案會以家園幣收益最大化為目標。</p>`;
         return;
     }
     if (context.ready) {
-        time.textContent = 'Ready now';
-        lines.innerHTML = `<p class="level-up-note">You already have everything it costs. This plan is for the most Home Coins.</p>`;
+        time.textContent = '現在即可完成';
+        lines.innerHTML = `<p class="level-up-note">升級所需資源已全部擁有。此方案會以家園幣收益最大化為目標。</p>`;
         return;
     }
     if (!report) {
         const why = plan.level_up_note === 'unreachable'
-            ? `These facilities can't make everything it costs.`
-            : `The level-up couldn't be planned.`;
+            ? `這些設施無法完整生產方案所需的成本。`
+            : `無法規劃此升級。`;
         time.textContent = '-';
-        lines.innerHTML = `<p class="level-up-note">${why} This plan is for the most Home Coins.</p>`;
+        lines.innerHTML = `<p class="level-up-note">${why} 此方案會以家園幣收益最大化為目標。</p>`;
         return;
     }
     time.textContent = `in ${formatDuration(report.seconds)}`;
@@ -2488,13 +2607,13 @@ function renderLevelUp(plan) {
         .map(r => ({ name: r.name, spare: Math.floor(r.have + r.per_second * report.seconds - r.need) }))
         .concat((report.leftovers || []).map(([name, amount]) => ({ name, spare: Math.floor(amount) })))
         .filter(r => r.spare >= 1)
-        .map(r => `${formatNumber(r.spare)} ${r.name === 'coins' ? 'Home Coins' : ITEM_NAMES[r.name] || prettyItem(r.name)}`);
+        .map(r => `${formatNumber(r.spare)} ${r.name === 'coins' ? '家園幣' : ITEM_NAMES[r.name] || prettyItem(r.name)}`);
     const coinsNote = surplus.length
-        ? `<p class="level-up-coins"><span>Surplus:</span> <strong>${surplus.join(', ')}</strong></p>`
+        ? `<p class="level-up-coins"><span>剩餘：</span> <strong>${surplus.join(', ')}</strong></p>`
         : '';
     lines.innerHTML = `
         <table class="level-up-lines">
-            <thead><tr><th>Cost</th><th>Need</th><th>Have</th><th id="level-up-rate-head"></th><th>Ready in</th></tr></thead>
+            <thead><tr><th>成本</th><th>需求</th><th>持有</th><th id="level-up-rate-head"></th><th>完成時間</th></tr></thead>
             <tbody>${rows}</tbody>
         </table>
         ${coinsNote}`;
@@ -2531,24 +2650,24 @@ function renderSeedTable(plan) {
     const totalCost = rows.reduce((sum, r) => sum + r.cost, 0);
     const totalWheat = rows.reduce((sum, r) => sum + r.wheat, 0);
     const totals = [
-        totalCost > 0 ? `${amount(totalCost)} Home Coins` : '',
+        totalCost > 0 ? `${amount(totalCost)} 家園幣` : '',
         totalWheat > 0 ? `${amount(totalWheat)} ${SEASON.currency}` : '',
     ].filter(Boolean).join(' + ');
     card.style.display = 'block';
     const per = levelUp
         ? `until RV ${planContext.target}`
-        : { second: 'per second', minute: 'per minute', hour: 'per hour', day: 'per day' }[unit] || 'per second';
-    document.getElementById('seed-card-unit').textContent = `Seeds ${per}: one per planting, for every Farmland and Woodland crop in the plan.`;
+        : { second: '每秒', minute: '每分鐘', hour: '每小時', day: '每天' }[unit] || '每秒';
+    document.getElementById('seed-card-unit').textContent = `${per}種子：方案中的每一塊田地與林地作物各需 1 份。`;
     el.innerHTML = `
         <table>
-            <thead><tr><th>Crop</th><th>Plots</th><th>Seeds</th><th>Cost</th></tr></thead>
+            <thead><tr><th>作物</th><th>數量</th><th>種子</th><th>成本</th></tr></thead>
             <tbody>${rows.map(r => `<tr>
                 <td>${prettyItem(r.name)}</td>
                 <td>${r.plots}</td>
                 <td>${amount(r.seeds)}</td>
-                <td>${r.wheat > 0 ? `${amount(r.wheat)} ${SEASON.currency}` : r.cost > 0 ? `${amount(r.cost)} Home Coins` : 'free'}</td>
+                <td>${r.wheat > 0 ? `${amount(r.wheat)} ${SEASON.currency}` : r.cost > 0 ? `${amount(r.cost)} 家園幣` : '免費'}</td>
             </tr>`).join('')}</tbody>
-            ${rows.length > 1 && totals ? `<tfoot><tr><td colspan="3">Total</td><td>${totals}</td></tr></tfoot>` : ''}
+            ${rows.length > 1 && totals ? `<tfoot><tr><td colspan="3">合計</td><td>${totals}</td></tr></tfoot>` : ''}
         </table>`;
 }
 
@@ -2567,17 +2686,17 @@ function renderProfitBreakdown(plan) {
     const rows = [...streams]
         .sort((a, b) => b.rate_per_second - a.rate_per_second)
         .map(s => `<tr>
-            <td data-label="Product">${prettyItem(s.item_name)}</td>
-            <td data-label="Facility">${s.facility}</td>
-            <td data-label="Sold per hour">${perHour(s.units_per_second)}</td>
-            <td data-label="Profit per hour">${formatNumber(Math.round(s.rate_per_second * 3600))}</td>
-            <td data-label="Share">${total > 0 ? Math.round(s.rate_per_second / total * 100) : 0}%</td>
-            <td data-label="Profit until RV ${planContext?.target}">${formatNumber(Math.floor(s.rate_per_second * report.seconds))}</td>
+            <td data-label="商品">${prettyItem(s.item_name)}</td>
+            <td data-label="設施">${prettyFacility(s.facility)}</td>
+            <td data-label="每小時售出">${perHour(s.units_per_second)}</td>
+            <td data-label="每小時收益">${formatNumber(Math.round(s.rate_per_second * 3600))}</td>
+            <td data-label="占比">${total > 0 ? Math.round(s.rate_per_second / total * 100) : 0}%</td>
+            <td data-label="到 RV ${planContext?.target} 前的收益">${formatNumber(Math.floor(s.rate_per_second * report.seconds))}</td>
         </tr>`).join('');
     document.getElementById('profit-breakdown').innerHTML = `
         <div class="table-wrapper">
             <table class="facility-plan-table">
-                <thead><tr><th>Product</th><th>Facility</th><th>Sold per hour</th><th>Profit per hour</th><th>Share</th><th>Profit until RV ${planContext?.target}</th></tr></thead>
+                <thead><tr><th>商品</th><th>設施</th><th>每小時售出</th><th>每小時收益</th><th>占比</th><th>直到 RV ${planContext?.target} 的收益</th></tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>`;
@@ -2638,7 +2757,23 @@ function getPlanInputValues() {
 function prettyItem(name) {
     if (!name) return name;
     if (ITEM_NAMES[name]) return ITEM_NAMES[name];
-    return name.split('_').map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(' ');
+    return zhItem(name);
+}
+
+function prettyFacility(name) {
+    return zhFacility(name);
+}
+
+function prettyAbility(name) {
+    return zhAbility(name);
+}
+
+function prettyPersonality(name) {
+    return zhPersonality(name);
+}
+
+function prettyEnvironment(name) {
+    return zhEnvironment(name);
 }
 
 // A plan row's reason with its item names made readable: "Used for dried_strawberries, jam; the
@@ -2647,8 +2782,9 @@ function prettyReason(reason) {
     if (!reason) return reason;
     const names = list => list.split(', ').map(prettyItem).join(', ');
     return reason
-        .replace(/^Used for ([^;]+)/, (_, list) => 'Used for ' + names(list))
-        .replace(/takes turns with ([^;]+)$/, (_, list) => 'takes turns with ' + names(list));
+        .replace(/^Used for ([^;]+)/, (_, list) => '用於 ' + names(list))
+        .replace(/takes turns with ([^;]+)$/, (_, list) => '與 ' + names(list) + ' 輪流生產')
+        .replace(/; the rest sells directly$/, '；其餘直接出售')
 }
 
 // Keys ("Facility|item") of the shown plan's rows that rely on recipes not yet checked in game;
@@ -2700,7 +2836,7 @@ function renderGoalTargets(plan) {
 }
 
 function goalName(row) {
-    return row.target === 'coins' ? 'Home Coins' : row.label;
+    return row.target === 'coins' ? '家園幣' : row.label;
 }
 
 // Renders the item-level production breakdown from `goalResult.products`; one row per income
@@ -2724,7 +2860,7 @@ function renderProductBreakdown(goalResult) {
 
     const unit = document.getElementById('rate-unit').value;
     const { multiplier, suffix } = RATE_UNIT_SECONDS[unit] || RATE_UNIT_SECONDS.second;
-    document.getElementById('product-breakdown-rate-header').innerHTML = `Profit <span class="th-unit">Home Coins${suffix}</span>`;
+    document.getElementById('product-breakdown-rate-header').innerHTML = `收益 <span class="th-unit">家園幣${suffix}</span>`;
     // During the season, what each item counts toward the season's points.
     const season = lastPlan?.season_points != null;
     const pointsEach = new Map((lastPlan?.income_streams || []).map(s => [s.item_name, s.points || 0]));
@@ -2746,7 +2882,7 @@ function renderProductBreakdown(goalResult) {
         const worth = wholeAmount * p.sell_value;
         row.innerHTML = `
             <td>${prettyItem(p.item_name)}</td>
-            <td>${p.facility}</td>
+            <td>${prettyFacility(p.facility)}</td>
             <td>${wholeAmount.toLocaleString()}</td>
             <td>${formatRate(p.rate_per_second * multiplier)}</td>
             <td>${formatNumber(worth)}</td>
@@ -2763,7 +2899,7 @@ function renderProductBreakdown(goalResult) {
             <td>&mdash;</td>
             <td>${Math.floor(amount).toLocaleString()}</td>
             <td>&mdash;</td>
-            <td>not sold</td>
+            <td>不可販售</td>
             ${pointsCell(0)}
         `;
         tbody.appendChild(row);
@@ -2788,7 +2924,7 @@ function renderSeedsNeeded(goalResult) {
     tbody.innerHTML = requirements.map(r => `
         <tr>
             <td>${prettyItem(r.item_name)}</td>
-            <td>${r.facility}</td>
+            <td>${prettyFacility(r.facility)}</td>
             <td>${r.facility_count.toLocaleString()}</td>
             <td>${r.seeds_per_plot.toLocaleString()}</td>
             <td>${r.total_seeds.toLocaleString()}</td>
@@ -2805,19 +2941,19 @@ const ENVIRONMENT_MODE_ORDER = ['Warm', 'Scorching', 'Cool', 'Freeze', 'Adequate
 // Every Aniimo ability in the game's own order, with its in-game color and what it's for.
 // `dark` marks colors light enough to need dark text.
 const ABILITIES = [
-    { name: 'Fire', color: '#e5484d', about: 'Cooking, smelting and heat' },
-    { name: 'Grass', color: '#3fa36b', about: 'Planting seeds and gathering' },
-    { name: 'Water', color: '#2b8fe8', about: 'Brewing, fetching water and watering' },
-    { name: 'Earth', color: '#b39a74', about: 'Reclaiming land and mining' },
-    { name: 'Lightning', color: '#e6c317', about: 'Electricity', dark: true },
-    { name: 'Ice', color: '#45c4de', about: 'Cooling the homeland' },
-    { name: 'Wind', color: '#2fbfa5', about: 'Processing with wind' },
-    { name: 'Dark', color: '#7d4bb3', about: 'Harvesting, cutting, pickling and drying' },
-    { name: 'Light', color: '#f5a524', about: 'Lighting the homeland', dark: true },
-    { name: 'Hauling', color: '#5f7fd1', about: 'Carrying produce to storage' },
-    { name: 'Artisanship', color: '#5fb14f', about: 'Handcrafted goods' },
-    { name: 'Leisure', color: '#e8678a', about: 'Making things while playing' },
-    { name: 'Perfumery', color: '#b877d9', about: 'Perfumes and incense' },
+    { name: 'Fire', color: '#e5484d', about: zhAbilityAbout('Fire') },
+    { name: 'Grass', color: '#3fa36b', about: zhAbilityAbout('Grass') },
+    { name: 'Water', color: '#2b8fe8', about: zhAbilityAbout('Water') },
+    { name: 'Earth', color: '#b39a74', about: zhAbilityAbout('Earth') },
+    { name: 'Lightning', color: '#e6c317', about: zhAbilityAbout('Lightning'), dark: true },
+    { name: 'Ice', color: '#45c4de', about: zhAbilityAbout('Ice') },
+    { name: 'Wind', color: '#2fbfa5', about: zhAbilityAbout('Wind') },
+    { name: 'Dark', color: '#7d4bb3', about: zhAbilityAbout('Dark') },
+    { name: 'Light', color: '#f5a524', about: zhAbilityAbout('Light'), dark: true },
+    { name: 'Hauling', color: '#5f7fd1', about: zhAbilityAbout('Hauling') },
+    { name: 'Artisanship', color: '#5fb14f', about: zhAbilityAbout('Artisanship') },
+    { name: 'Leisure', color: '#e8678a', about: zhAbilityAbout('Leisure') },
+    { name: 'Perfumery', color: '#b877d9', about: zhAbilityAbout('Perfumery') },
 ];
 const ABILITY_BY_NAME = new Map(ABILITIES.map(a => [a.name, a]));
 
@@ -2832,7 +2968,7 @@ const ENVIRONMENT_BUILDING_ABILITY = {
 function abilityTag(name) {
     const a = ABILITY_BY_NAME.get(name);
     if (!a) return name;
-    return `<span class="ability${a.dark ? ' dark' : ''}" style="--ability:${a.color}" title="${a.about}">${name}</span>`;
+    return `<span class="ability${a.dark ? ' dark' : ''}" style="--ability:${a.color}" title="${a.about}">${prettyAbility(name)}</span>`;
 }
 
 // A colored circle with the Aniimo level in it, for the facility plan's Aniimo column; the
@@ -2840,7 +2976,7 @@ function abilityTag(name) {
 function abilityDot(name, level, note) {
     const a = ABILITY_BY_NAME.get(name);
     const color = a ? a.color : '#888888';
-    const tip = `${name} Lv.${level}${note ? ` · ${note}` : ''}`;
+    const tip = `${prettyAbility(name)} Lv.${level}${note ? ` · ${note}` : ''}`;
     return `<span class="ability-dot${a && a.dark ? ' dark' : ''}${note ? ' bonus' : ''}" style="--ability:${color}" title="${tip}" aria-label="${tip}">${level}</span>`;
 }
 
@@ -2855,7 +2991,7 @@ function aniimoLabel(step) {
     let note = '';
     if (a.personality_bonus) {
         const personality = FACILITIES.find(f => f.name === step.facility)?.personality;
-        note = `${personality ? `${personality} personality` : 'matching personality'} (+20% speed)`;
+        note = `${personality ? `${prettyPersonality(personality)} 個性` : '符合個性'}（+20% 速度）`;
     }
     return `<span class="ability-dots">${abilityDot(a.ability, a.level, note)}</span>`;
 }
@@ -2866,11 +3002,11 @@ function taskLabel(task, facility, tagged = false) {
     const ability = tagged ? abilityTag(task.ability) : task.ability;
     if (!task.personality_bonus) return `${ability} Lv.${task.level}`;
     const personality = FACILITIES.find(f => f.name === facility)?.personality;
-    if (!personality) return `${ability} Lv.${task.level} · matching personality`;
+    if (!personality) return `${ability} Lv.${task.level} · 符合個性`;
     // The letter the game shows over an Aniimo's portrait, so a player can read a team off the
     // four it carries.
     const letter = personalityLetter(personality);
-    return `${ability} Lv.${task.level} · ${personality}${letter ? ` (${letter})` : ''}`;
+    return `${ability} Lv.${task.level} · ${prettyPersonality(personality)}${letter ? ` (${letter})` : ''}`;
 }
 
 function facilityPlanTable(rows) {
@@ -2888,11 +3024,11 @@ function facilityPlanTableOf(groups) {
             <table class="facility-plan-table">
                 <thead>
                     <tr>
-                        <th>Facility</th>
-                        <th>Count</th>
-                        <th>Producing</th>
+                        <th>設施</th>
+                        <th>數量</th>
+                        <th>生產</th>
                         <th>Aniimo</th>
-                        <th>Why</th>
+                        <th>用途</th>
                     </tr>
                 </thead>
                 <tbody>${body}</tbody>
@@ -2904,9 +3040,9 @@ function facilityPlanTableOf(groups) {
 function planRows(rows) {
     return rows.map(step => `
                     <tr class="status-${step.status}">
-                        <td data-label="Facility">${step.facility}</td>
-                        <td data-label="Count">${step.facility_count}</td>
-                        <td data-label="Producing">${step.item_name ? prettyItem(step.item_name) : '-'}${unverifiedRowKeys.has(`${step.facility}|${step.item_name}`) ? '<span class="tag unverified" title="Not yet checked in game">unverified</span>' : ''}${step.item_name && step.status === 'producing' ? `<button type="button" class="skip-row" data-skip="${step.item_name}" title="Can't make this? Skip it and plan again" aria-label="Skip ${prettyItem(step.item_name)} and plan again">✕</button>` : ''}</td>
+                        <td data-label="設施">${prettyFacility(step.facility)}</td>
+                        <td data-label="數量">${step.facility_count}</td>
+                        <td data-label="生產">${step.item_name ? prettyItem(step.item_name) : '-'}${unverifiedRowKeys.has(`${step.facility}|${step.item_name}`) ? '<span class="tag unverified" title="尚未在遊戲中確認">未確認</span>' : ''}${step.item_name && step.status === 'producing' ? `<button type="button" class="skip-row" data-skip="${step.item_name}" title="不想生產這個？略過後重新計算" aria-label="略過 ${prettyItem(step.item_name)} 並重新計算">✕</button>` : ''}</td>
                         <td data-label="Aniimo">${aniimoLabel(step)}</td>
                         <td data-label="Why">${prettyReason(step.reason)}</td>
                     </tr>
@@ -2990,7 +3126,7 @@ function renderAniimoSummary(plan) {
         if (!ability || !units) return;
         const key = `${ability} (environment)`;
         if (!groups.has(key)) {
-            groups.set(key, { label: `${ability} any level`, ability, level: 1, bonus: false, busy: 0, where: new Map(), jobs: new Map(), environment: true });
+            groups.set(key, { label: `${zhAbility(ability)} 任意等級`, ability, level: 1, bonus: false, busy: 0, where: new Map(), jobs: new Map(), environment: true });
         }
         const g = groups.get(key);
         g.busy += units;
@@ -3015,8 +3151,8 @@ function renderAniimoSummary(plan) {
     });
     const collapsedSummary = document.getElementById('aniimo-collapsed-summary');
     if (groups.size === 0) {
-        container.innerHTML = '<p class="hint">Nothing in this plan needs an Aniimo.</p>';
-        collapsedSummary.textContent = 'No Aniimo needed.';
+        container.innerHTML = '<p class="hint">此方案不需要配置 Aniimo。</p>';
+        collapsedSummary.textContent = '不需要 Aniimo。';
         const count = document.getElementById('aniimo-count');
         if (count) count.hidden = true;
         document.getElementById('aniimo-abilities').innerHTML = '';
@@ -3070,15 +3206,15 @@ function renderAniimoSummary(plan) {
         .map(g => {
             total += g.count;
             const where = whereText(g);
-            return `<tr><td data-label="Aniimo">${abilityTag(g.ability)} ${aniimoNeeds(g)}</td><td data-label="How many">${g.count}</td><td data-label="Busy on average">${g.busy.toFixed(1)}</td><td data-label="Where">${where}</td></tr>`;
+            return `<tr><td data-label="Aniimo">${abilityTag(g.ability)} ${aniimoNeeds(g)}</td><td data-label="數量">${g.count}</td><td data-label="平均忙碌">${g.busy.toFixed(1)}</td><td data-label="工作位置">${where}</td></tr>`;
         })
         .join('');
-    const haulingRow = `<tr><td data-label="Aniimo">${abilityTag('Hauling')} any level</td><td data-label="How many">1+</td><td data-label="Busy on average">?</td><td data-label="Where">Carries produce to storage. How much work this is isn't known yet; add more if produce piles up.</td></tr>`;
+    const haulingRow = `<tr><td data-label="Aniimo">${abilityTag('Hauling')} 任意等級</td><td data-label="數量">1+</td><td data-label="平均忙碌">?</td><td data-label="工作位置">將產物搬到儲存箱；目前尚不知道需要多少搬運工，若產物堆積請增加 Aniimo。</td></tr>`;
 
     // The count above says how many; this is only said when it's more than the homeland holds.
     const cap = homelandHolds;
     const capNote = cap && total > cap
-        ? `<p class="hint small">That's ${total} Aniimo, more than the ${cap} an RV level ${selectedHomeLevel()} homeland holds.</p>`
+        ? `<p class="hint small">共有 ${total} 隻 Aniimo，超過 RV Lv.${selectedHomeLevel()} 家園可容納的 ${cap} 隻上限。</p>`
         : '';
     const have = document.getElementById('aniimo-count-have');
     const of = document.getElementById('aniimo-count-of');
@@ -3090,8 +3226,8 @@ function renderAniimoSummary(plan) {
         count.hidden = false;
         count.classList.toggle('over', !!cap && total > cap);
         count.title = cap
-            ? `${total} Aniimo for this plan; an RV level ${selectedHomeLevel()} homeland holds ${cap}`
-            : `${total} Aniimo for this plan`;
+            ? `此方案需要 ${total} 隻 Aniimo；RV ${selectedHomeLevel()} 家園可容納 ${cap} 隻`
+            : `此方案需要 ${total} 隻 Aniimo`;
     }
     collapsedSummary.textContent = '';
     // How many of each ability the plan needs, in the game's order, like its Abilities screen.
@@ -3118,7 +3254,7 @@ function renderAniimoSummary(plan) {
             .sort((x, y) => y.level - x.level || Number(y.bonus) - Number(x.bonus))
             .map(teamDots);
         if (a.name === 'Hauling') {
-            dots.push(`<span class="ability-kind">${dot('Hauling', '·', false, 'Hauling, any level · carries produce to storage; add more if produce piles up')}</span>`);
+            dots.push(`<span class="ability-kind">${dot('Hauling', '·', false, '搬運，任意等級 · 將產物搬到儲存箱；若產物堆積，請增加 Aniimo')}</span>`);
         }
         const stack = dots.length ? `<div class="ability-stack">${dots.join('')}</div>` : '';
         return `<div class="ability-col" style="--ability:${a.color}">
@@ -3129,7 +3265,7 @@ function renderAniimoSummary(plan) {
     container.innerHTML = `
         <div class="table-wrapper">
             <table class="facility-plan-table">
-                <thead><tr><th>Aniimo</th><th>How many</th><th>Busy on average</th><th>Where</th></tr></thead>
+                <thead><tr><th>Aniimo</th><th>數量</th><th>平均忙碌</th><th>工作位置</th></tr></thead>
                 <tbody>${rows}${haulingRow}</tbody>
             </table>
         </div>
@@ -3420,7 +3556,7 @@ function renderEnvironmentDiagram(layout, mode, building, rows = [], unit = null
         const [facility, crop] = key.split('|');
         // The number a plot carries in the diagram reads as part of the facility's name, as the
         // plots themselves do: "Farmland 1: Sugarcane".
-        const named = `${facility}${numbered ? ` <b>${numberOf(key)}</b>` : ''}`;
+        const named = `${prettyFacility(facility)}${numbered ? ` <b>${numberOf(key)}</b>` : ''}`;
         const name = crop && crop !== 'null' ? `${named}: ${prettyItem(crop)}` : named;
         return `
         <span class="env-legend-item">
@@ -3478,7 +3614,7 @@ function renderFacilityPlan(plan) {
     const steps = plan.coin_items || [];
 
     if (steps.length === 0) {
-        container.innerHTML = '<p class="hint">Nothing profitable to produce with the current facilities.</p>';
+        container.innerHTML = '<p class="hint">目前的設施沒有可產生收益的生產方案。</p>';
         return;
     }
 
@@ -3573,7 +3709,7 @@ function renderFacilityPlan(plan) {
         if (categorySteps.length === 0) return '';
         return `
             <div class="facility-category">
-                <h4 class="facility-category-title">${category}</h4>
+                <h4 class="facility-category-title">${zhCategory(category)}</h4>
                 ${facilityPlanTable(categorySteps)}
             </div>
         `;
@@ -3610,7 +3746,7 @@ function updateRateDisplay(pickUnit = false) {
         const label = CURRENCY_LABELS[lastPlan.currency] || lastPlan.currency;
         const points = lastPlan.season_points > 1e-12 ? ` + ${formatRate(lastPlan.season_points * multiplier)} ${SEASON.points}` : '';
         document.getElementById('plan-rate').textContent = `${formatRate(lastPlan.rate_per_second * multiplier)} ${label}${points}${suffix}`;
-        document.getElementById('rate-label').textContent = 'Your Rate';
+        document.getElementById('rate-label').textContent = '你的產量';
         rateLine.style.display = '';
         table.innerHTML = '';
         return;
@@ -3632,11 +3768,11 @@ function updateRateDisplay(pickUnit = false) {
     }).join('');
     table.innerHTML = `
         <table class="level-up-lines rate-table">
-            <thead><tr><th>#</th><th>Priority</th><th id="priority-rate-head"></th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>優先目標</th><th id="priority-rate-head"></th><th></th></tr></thead>
             <tbody>${body}</tbody>
         </table>`;
     document.getElementById('priority-rate-head').appendChild(select);
-    document.getElementById('rate-label').textContent = 'Your Rates';
+    document.getElementById('rate-label').textContent = '你的產量';
     rateLine.style.display = 'none';
 }
 
@@ -3644,8 +3780,8 @@ function updateRateDisplay(pickUnit = false) {
 // left if coins wasn't one of them. A priority the homeland can't make yet says why.
 function priorityRows(plan) {
     const missing = {
-        aniimo_exp: planContext?.hasPolisher ? null : 'No Dance Pad Polisher yet',
-        aniipods: planContext?.aniipod ? null : 'No Aniipod Maker yet',
+        aniimo_exp: planContext?.hasPolisher ? null : '尚未擁有舞墊拋光機',
+        aniipods: planContext?.aniipod ? null : '尚未擁有 Aniipod 製造機',
     };
     const rows = (plan.priorities || []).map((p, i) => ({
         rank: i + 1,
@@ -3657,7 +3793,7 @@ function priorityRows(plan) {
         missing: missing[p.target] || null,
     }));
     if (!rows.some(r => r.target === 'coins')) {
-        rows.push({ rank: null, target: 'coins', label: rows.length ? "Home Coins, from what's left" : 'Home Coins', perSecond: plan.rate_per_second, items: [], missing: null });
+        rows.push({ rank: null, target: 'coins', label: rows.length ? "剩餘資源所產生的家園幣" : '家園幣', perSecond: plan.rate_per_second, items: [], missing: null });
     }
     // During the season, points come with every season item sold, ranked or not.
     if (plan.season_points != null && !rows.some(r => r.target === 'season_points')) {
@@ -3698,7 +3834,7 @@ function displayPlan(plan) {
             showRosterShortfall();
             return;
         }
-        showError(plan.error || 'An unknown error occurred.');
+        showError(plan.error || '發生未知錯誤。');
         showSetupOnly();
         return;
     }
@@ -3721,17 +3857,17 @@ function displayPlan(plan) {
         explored.textContent = '';
     } else if (plan.proven_optimal === false && plan.upper_bound > 0) {
         const gap = Math.max(0, (plan.upper_bound - plan.rate_per_second) / plan.upper_bound * 100);
-        explored.textContent = `Best plan found in the time allowed; the best possible is at most ${gap.toFixed(1)}% higher.`;
+        explored.textContent = `在限定時間內找到的最佳方案；理論上最多還可能高出 ${gap.toFixed(1)}%。`;
     } else {
         const reason = plan.fallback_reason ? ` (${plan.fallback_reason})` : '';
-        explored.textContent = `The exact planner couldn't run${reason}, so this plan comes from the backup planner and may not be the very best. Reloading the page usually fixes this.`;
+        explored.textContent = `精確最佳化器無法執行${reason}，因此此方案來自備援最佳化器，不一定是理論最佳解。通常重新整理頁面即可修復。`;
     }
 
     const unverifiedEl = document.getElementById('plan-unverified');
     const unverified = plan.unverified || [];
     unverifiedRowKeys = new Set(unverified.map(u => `${u.facility}|${u.item_name}`));
     if (unverified.length) {
-        unverifiedEl.textContent = `${unverified.length} recipe${unverified.length === 1 ? '' : 's'} in this plan ${unverified.length === 1 ? "hasn't" : "haven't"} been checked in game yet (tagged below). If any of those numbers are off, so is this plan.`;
+        unverifiedEl.textContent = `此方案有 ${unverified.length} 個配方尚未在遊戲中確認（下方會標記）。如果這些數值有誤，方案結果也會受到影響。`;
         unverifiedEl.style.display = 'block';
     } else {
         unverifiedEl.style.display = 'none';
@@ -3740,7 +3876,7 @@ function displayPlan(plan) {
     const skippedEl = document.getElementById('plan-skipped');
     const skipped = planContext?.skipped || [];
     skippedEl.style.display = skipped.length ? 'block' : 'none';
-    skippedEl.textContent = skipped.length ? `Skipping ${skipped.map(prettyItem).join(', ')}.` : '';
+    skippedEl.textContent = skipped.length ? `略過：${skipped.map(prettyItem).join('、')}。` : '';
 
     renderSeedTable(plan);
     renderLevelUp(plan);
@@ -3759,7 +3895,7 @@ function displayGoal(goalResult) {
         document.getElementById('amount-produced').textContent = '-';
         document.getElementById('product-breakdown-section').style.display = 'none';
         document.getElementById('seeds-needed-section').style.display = 'none';
-        console.warn('Goal calculation failed:', goalResult.error);
+        console.warn('目標計算失敗：', goalResult.error);
         return;
     }
 
@@ -3775,7 +3911,7 @@ function displayGoal(goalResult) {
 // triggered explicitly by the Calculate button or Enter in a facility/module field.
 async function runFindPlan() {
     if (!wasmReady) {
-        showError('Optimizer not ready. Please wait...');
+        showError('最佳化器尚未準備完成，請稍候……');
         return;
     }
 
@@ -3860,8 +3996,8 @@ async function runFindPlan() {
             .catch(error => {
                 if (runId !== planRunId) return;
                 setStep('minimum', 'fail');
-                console.error('Minimum Aniimo plan failed:', error);
-                plansBySetup.minimum = { success: false, error: `The Minimum team plan failed: ${error.message}` };
+                console.error('最低需求 Aniimo 方案失敗：', error);
+                plansBySetup.minimum = { success: false, error: `最低需求隊伍方案計算失敗：${error.message}` };
                 if (selectedAniimoSetup() === 'minimum') showSelectedPlan();
             });
     } catch (error) {
@@ -3871,9 +4007,9 @@ async function runFindPlan() {
             progress.steps.forEach(s => { if (s.state === 'running') s.state = 'fail'; else if (s.state === 'pending') s.state = 'skipped'; });
             renderProgress();
         }
-        console.error('Plan calculation error:', error);
+        console.error('方案計算錯誤：', error);
         lastPlan = null;
-        showError(`Plan calculation failed: ${error.message}`);
+        showError(`方案計算失敗：${error.message}`);
     } finally {
         if (runId !== planRunId) return;
         btn.disabled = false;
@@ -3892,9 +4028,9 @@ async function runTimeToGoal() {
     const rows = priorityRows(lastPlan);
     const chosen = rows.find(r => r.target === document.getElementById('goal-target').value) || rows[0];
     const name = goalName(chosen);
-    document.getElementById('target-amount-label').textContent = `Target ${name}`;
-    document.getElementById('current-amount-label').textContent = `Current ${name}`;
-    document.getElementById('amount-produced-label').textContent = `${name} produced`;
+    document.getElementById('target-amount-label').textContent = `目標 ${name}`;
+    document.getElementById('current-amount-label').textContent = `目前 ${name}`;
+    document.getElementById('amount-produced-label').textContent = `${name} 產量`;
 
     const target = floatOrDefault(document.getElementById('target-amount').value, 0);
     const current = floatOrDefault(document.getElementById('current-amount').value, 0);
@@ -3907,7 +4043,7 @@ async function runTimeToGoal() {
             displayGoal(result);
             renderGoalAlso(rows, chosen, result.success ? result.total_time_seconds : null, result);
         } catch (error) {
-            console.error('Goal calculation error:', error);
+            console.error('目標計算錯誤：', error);
         }
         return;
     }
@@ -3917,7 +4053,7 @@ async function runTimeToGoal() {
     const seconds = needed <= 0 ? 0 : chosen.perSecond <= 1e-12 ? null : timeToMake(chosen, needed);
     if (seconds === null) {
         lastGoalResult = null;
-        document.getElementById('total-time').textContent = chosen.missing || 'Not made by this plan';
+        document.getElementById('total-time').textContent = chosen.missing || '此方案不會生產';
         document.getElementById('amount-produced').textContent = '-';
         document.getElementById('product-breakdown-section').style.display = 'none';
         document.getElementById('seeds-needed-section').style.display = 'none';
@@ -3930,7 +4066,7 @@ async function runTimeToGoal() {
         document.getElementById('amount-produced').textContent = formatNumber(Math.round(needed));
         renderGoalAlso(rows, chosen, seconds, result);
     } catch (error) {
-        console.error('Goal calculation error:', error);
+        console.error('目標計算錯誤：', error);
     }
 }
 
@@ -3970,7 +4106,7 @@ function renderGoalAlso(rows, chosen, seconds, result) {
             .map(r => `${formatNumber(Math.floor(made(r)))} ${goalName(r)}`)
         : [];
     el.style.display = also.length ? 'block' : 'none';
-    el.innerHTML = also.length ? `<span>By then you'll also have:</span> <strong>${also.join(', ')}</strong>` : '';
+    el.innerHTML = also.length ? `<span>到達目標時你還會擁有：</span> <strong>${also.join(', ')}</strong>` : '';
 }
 
 // --- Facility recipe reference modal ----------------------------------------------------
@@ -3980,10 +4116,10 @@ function renderGoalAlso(rows, chosen, seconds, result) {
 // `ProductionItem` unfiltered.
 
 const RECIPE_MODULE_LABELS = {
-    ecological_module: 'Ecological Module',
-    kitchen_module: 'Kitchen Module',
-    resource_detector: 'Resource Detector',
-    crafting_module: 'Crafting Module',
+    ecological_module: '生態模組',
+    kitchen_module: '廚房模組',
+    resource_detector: '資源探測器',
+    crafting_module: '製作模組',
 };
 
 // Cached after the first render, since the underlying data never changes for a given wasm build.
@@ -4045,8 +4181,8 @@ function formatRecipeAniimo(recipe, facility) {
 
 // "44 Home Coins", or what a level-up material is for.
 function formatRecipeSell(recipe) {
-    if (recipe.sell_currency === 'none') return '<span class="hint small">RV level-ups</span>';
-    return `${formatNumber(recipe.sell_value)} ${recipe.sell_value === 1 ? 'Home Coin' : 'Home Coins'}`;
+    if (recipe.sell_currency === 'none') return '<span class="hint small">RV 升級</span>';
+    return `${formatNumber(recipe.sell_value)} ${recipe.sell_value === 1 ? 'Home Coin' : '家園幣'}`;
 }
 
 function formatRecipeModule(recipe) {
@@ -4080,13 +4216,13 @@ function renderRecipeTables(recipes) {
             const cell = (label, value) => `<td data-label="${label}"${value === '-' ? ' class="empty"' : ''}>${value}</td>`;
             const rows = byFacility.get(f.name).map(r => `
                 <tr${r.verified === false ? ' class="unverified"' : ''}>
-                    <td class="recipe-name">${prettyItem(r.name)}${SPECIAL_NAMES.has(r.name) ? ' <span class="tag special" title="Takes a rare currency to unlock">special</span>' : ''}${r.season ? ` <span class="tag special" title="${SEASON.name} only">season</span>` : ''}${r.verified === false ? ' <span class="info-icon" data-tooltip="Not yet checked in game.">?</span>' : ''}</td>
-                    ${cell('Level', r.facility_level)}
-                    ${cell('Inputs', formatRecipeInputs(r))}
-                    ${cell('Yield', formatRecipeYield(r))}
-                    ${cell('Time', r.workload ? `${r.workload} workload` : formatRecipeTime(r.production_time))}
-                    ${cell('Sell', formatRecipeSell(r))}
-                    ${cell('Module', formatRecipeModule(r))}
+                    <td class="recipe-name">${prettyItem(r.name)}${SPECIAL_NAMES.has(r.name) ? ' <span class="tag special" title="需要稀有貨幣才能解鎖">特殊</span>' : ''}${r.season ? ` <span class="tag special" title="僅限 ${SEASON.name}">活動</span>` : ''}${r.verified === false ? ' <span class="info-icon" data-tooltip="尚未在遊戲中確認。">?</span>' : ''}</td>
+                    ${cell('等級', r.facility_level)}
+                    ${cell('投入', formatRecipeInputs(r))}
+                    ${cell('產出', formatRecipeYield(r))}
+                    ${cell('時間', r.workload ? `${r.workload} workload` : formatRecipeTime(r.production_time))}
+                    ${cell('售價', formatRecipeSell(r))}
+                    ${cell('模組', formatRecipeModule(r))}
                     ${cell('Aniimo', formatRecipeAniimo(r, f))}
                 </tr>
             `).join('');
@@ -4098,14 +4234,14 @@ function renderRecipeTables(recipes) {
                         <table class="recipe-table">
                             <thead>
                                 <tr>
-                                    <th>Item</th>
-                                    <th>Level</th>
-                                    <th>Inputs</th>
-                                    <th>Yield</th>
-                                    <th>Time <span class="info-icon" data-tooltip="Grow time for crops and trees, before watering takes an eighth off it twice. Everything else lists workload: at 100% Efficiency a processor gets through one workload a second, a gathering facility 1.25 on a level-2 recipe and 1.5 on a level-3 one. An Aniimo at the level a recipe needs works at 100%; higher levels are faster, up to level 4 (at a processor, 300% one level above, then +100% per level; at gathering facilities each level adds half a workload a second, reading as +50% on a level-1 recipe, +40% on a level-2 one and +33% on a level-3 one).">?</span></th>
-                                    <th>Sell</th>
-                                    <th>Module</th>
-                                    <th>Aniimo <span class="info-icon" data-tooltip="The lowest ability level that can make this, and the best Aniimo for it: level 4, the top, with the facility's personality (+20% speed). For crops and trees, the ability each job needs, in order.">?</span></th>
+                                    <th>物品</th>
+                                    <th>等級</th>
+                                    <th>投入</th>
+                                    <th>產出</th>
+                                    <th>時間 <span class="info-icon" data-tooltip="作物與樹木顯示生長時間；澆水會使生長時間各減少八分之一。其他設施顯示工作量：100% 效率時，加工設施每秒完成 1 工作量；採集設施在 Lv.2 配方為每秒 1.25、Lv.3 配方為每秒 1.5。達到配方需求等級的 Aniimo 以 100% 工作；更高等級會更快，最高 Lv.4。">?</span></th>
+                                    <th>售價</th>
+                                    <th>模組</th>
+                                    <th>Aniimo <span class="info-icon" data-tooltip="可生產此商品的最低能力等級，以及最佳 Aniimo；最高為 Lv.4，若符合設施個性可獲得 +20% 速度。作物與樹木則依序顯示各工作所需能力。">?</span></th>
                                 </tr>
                             </thead>
                             <tbody>${rows}</tbody>
@@ -4117,7 +4253,7 @@ function renderRecipeTables(recipes) {
 
         return `
             <div class="facility-category">
-                <h4 class="facility-category-title">${category}</h4>
+                <h4 class="facility-category-title">${zhCategory(category)}</h4>
                 ${tables}
             </div>
         `;
@@ -4128,7 +4264,7 @@ window.showFacilities = async function() {
     document.getElementById('facilitiesModal').classList.add('show');
     if (recipesRendered) return;
     if (!wasmReady) {
-        document.getElementById('facilities-loading-hint').textContent = 'Optimizer not ready. Please wait...';
+        document.getElementById('facilities-loading-hint').textContent = '最佳化器尚未準備完成，請稍候……';
         return;
     }
     try {
@@ -4139,7 +4275,7 @@ window.showFacilities = async function() {
         document.getElementById('facilities-loading-hint').style.display = 'none';
     } catch (error) {
         console.error('Failed to load recipe data:', error);
-        document.getElementById('facilities-loading-hint').textContent = 'Failed to load recipe data. Please refresh the page.';
+        document.getElementById('facilities-loading-hint').textContent = '無法載入配方資料，請重新整理頁面。';
     }
 }
 
@@ -4159,7 +4295,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         sharedData = await readShareHash(window.location.hash);
     } catch (error) {
-        document.getElementById('share-config-status').textContent = 'This share link is invalid. Your saved setup was kept.';
+        document.getElementById('share-config-status').textContent = '此分享連結無效；已保留你原本的儲存設定。';
         console.warn('Could not load shared config:', error);
     }
     const savedData = sharedData ? migrateSavedConfig(sharedData) : readStorage();
@@ -4169,6 +4305,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     populateLevelUpTargets();
     loadInputsFromStorage(savedData);
     attachAutoSave();
+    attachHomeProfileHandlers();
     attachFacilityTierHandlers();
     attachModeHandlers();
     attachStrategyHandlers();
@@ -4187,7 +4324,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('optimize-btn').addEventListener('click', runFindPlan);
     document.getElementById('clear-saved-btn').addEventListener('click', clearSavedInputs);
     document.getElementById('share-config-btn').addEventListener('click', shareCurrentConfig);
-    if (sharedData) document.getElementById('share-config-status').textContent = 'Shared setup loaded. Your saved setup is kept until you edit this one.';
+    if (sharedData) document.getElementById('share-config-status').textContent = '已載入分享設定；你原本的儲存設定會保留，直到你修改目前這份設定。';
     document.getElementById('rate-unit').addEventListener('change', () => {
         rateUnitChosen = true;
         updateRateUnitDisplays();

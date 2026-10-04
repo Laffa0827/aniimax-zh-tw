@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aniimax - Aniimo Production Optimizer</title>
+    <title>Aniimo 家園計算器｜繁體中文版</title>
     <link rel="stylesheet" href="style.css">
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
@@ -11,59 +11,76 @@
     <header>
         <h1>aniimax</h1>
         <div class="header-buttons">
-            <button class="toggle-button" onclick="showFacilities()" id="facilitiesToggle">facilities</button>
-            <button class="toggle-button" onclick="showMath()" id="mathToggle">math</button>
-            <button class="toggle-button" onclick="showHelp()" id="helpToggle">help</button>
-            <button class="toggle-button" onclick="toggleTheme()" id="themeToggle">light</button>
+            <button class="toggle-button" onclick="showFacilities()" id="facilitiesToggle">設施資料</button>
+            <button class="toggle-button" onclick="showMath()" id="mathToggle">計算原理</button>
+            <button class="toggle-button" onclick="showHelp()" id="helpToggle">說明</button>
+            <button class="toggle-button" onclick="toggleTheme()" id="themeToggle">淺色</button>
         </div>
     </header>
-    <p class="subtitle">aniimo homeland production optimizer</p>
-    <p class="disclaimer"><span class="disclaimer-icon" aria-hidden="true">⚠</span>A few recipes, facility levels and counts haven't been confirmed in game yet; they're marked where they're used.</p>
+    <p class="subtitle">Aniimo 家園生產最佳化器・繁體中文版</p>
+    <p class="disclaimer"><span class="disclaimer-icon" aria-hidden="true">⚠</span>部分配方、設施等級與數量尚未在遊戲中確認；使用到時會特別標示。</p>
 
     <div class="container">
 
         <main>
             <section class="card config-section">
                 <div class="card-head">
-                    <h2>Your Homeland</h2>
+                    <h2>我的家園</h2>
                     <div class="config-actions">
-                        <button type="button" id="share-config-btn" class="toggle-button small">Share setup</button>
-                        <button type="button" id="clear-saved-btn" class="toggle-button small" title="Your inputs are saved in this browser automatically.">Clear saved values</button>
+                        <button type="button" id="share-config-btn" class="toggle-button small">分享設定</button>
+                        <button type="button" id="clear-saved-btn" class="toggle-button small" title="你的設定會自動儲存在此瀏覽器中。">清除已儲存設定</button>
                     </div>
                 </div>
                 <div id="share-config-result" class="share-config-result" hidden>
-                    <label for="share-config-link">Shareable link</label>
+                    <label for="share-config-link">分享連結</label>
                     <input type="text" id="share-config-link" readonly>
                 </div>
                 <p id="share-config-status" class="hint small" role="status" aria-live="polite"></p>
 
-                <div class="tabs" role="radiogroup" aria-label="Input mode">
-                    <label><input type="radio" name="config-mode" id="mode-simple" value="simple" checked> Simple</label>
-                    <label><input type="radio" name="config-mode" id="mode-advanced" value="advanced"> Advanced</label>
+                <div class="home-profile-bar" aria-label="家園設定檔">
+                    <div class="home-profile-copy">
+                        <strong>家園設定檔</strong>
+                        <span class="hint small">可保存多套家園配置，例如「目前掛機」、「升級用」或「農作專用」。</span>
+                    </div>
+                    <div class="home-profile-controls">
+                        <select id="home-profile-select" aria-label="選擇家園設定檔">
+                            <option value="">目前設定（瀏覽器自動儲存）</option>
+                        </select>
+                        <input type="text" id="home-profile-name" maxlength="40" placeholder="設定檔名稱" aria-label="設定檔名稱">
+                        <button type="button" id="home-profile-save" class="toggle-button small">儲存檔案</button>
+                        <button type="button" id="home-profile-load" class="toggle-button small">載入</button>
+                        <button type="button" id="home-profile-delete" class="toggle-button small" disabled>刪除</button>
+                    </div>
+                    <p id="home-profile-status" class="hint small" role="status" aria-live="polite"></p>
+                </div>
+
+                <div class="tabs" role="radiogroup" aria-label="輸入模式">
+                    <label><input type="radio" name="config-mode" id="mode-simple" value="simple" checked> 簡易</label>
+                    <label><input type="radio" name="config-mode" id="mode-advanced" value="advanced"> 進階</label>
                 </div>
 
                 <div id="simple-config">
                     <div class="input-row">
                         <div class="input-field">
-                            <label for="home-level">RV level</label>
+                            <label for="home-level">家園等級（RV）</label>
                             <select id="home-level"></select>
                         </div>
                     </div>
-                    <p class="hint">Assumes you've built and upgraded everything your RV level allows.</p>
+                    <p class="hint">假設你已建造並升級目前 RV 等級允許的所有設施。</p>
                     <details class="explain simple-details">
-                        <summary id="simple-summary-title">Facilities and modules</summary>
+                        <summary id="simple-summary-title">設施與模組</summary>
                         <div id="simple-summary"></div>
                     </details>
                 </div>
 
                 <div id="advanced-config">
-                    <h3>Facilities</h3>
-                    <p class="hint">Set the count and level for each facility you have.</p>
+                    <h3>設施</h3>
+                    <p class="hint">設定你擁有的每種設施數量與等級。</p>
                     <div class="fill-row">
-                        <label for="fill-level">Fill from RV level</label>
+                        <label for="fill-level">依 RV 等級填入</label>
                         <select id="fill-level"></select>
-                        <button type="button" id="fill-btn" class="skip-add-btn">Fill</button>
-                        <span class="hint small">Replaces every count and level below with what that RV level allows.</span>
+                        <button type="button" id="fill-btn" class="skip-add-btn">填入</button>
+                        <span class="hint small">將下方所有數量與等級替換為該 RV 等級可擁有的配置。</span>
                     </div>
 
                     <!-- Facility cards are generated dynamically by app.js from the FACILITIES config,
@@ -71,38 +88,38 @@
                          Processing), so new facilities can be added without editing this file. -->
                     <div class="facilities-container" id="facilities-grid"></div>
 
-                    <h3>Item Upgrade Modules</h3>
-                    <p class="hint">Set the level for each upgrade module you have unlocked (0 = not unlocked).</p>
+                    <h3>物品升級模組</h3>
+                    <p class="hint">設定你已解鎖的升級模組等級（0 = 尚未解鎖）。</p>
 
                     <div class="modules-grid">
                         <div class="module-card">
-                            <h4>Ecological Module <span class="info-icon" data-tooltip="Lv.1: Quick Wheat&#10;Lv.2: Quick Bamboo&#10;Lv.3: Quick Potato&#10;Lv.4: Quick Lemon&#10;Lv.5: Quick Rice&#10;Lv.6: Quick Maple Syrup&#10;Lv.7: Quick Strawberry&#10;Lv.8: Quick Coconut">?</span></h4>
+                            <h4>生態模組 <span class="info-icon" data-tooltip="Lv.1：高速小麥&#10;Lv.2：高速竹子&#10;Lv.3：高速馬鈴薯&#10;Lv.4：高速檸檬&#10;Lv.5：高速米&#10;Lv.6：高速楓糖漿&#10;Lv.7：高速草莓&#10;Lv.8：高速椰子">?</span></h4>
                             <div class="input-field">
-                                <label for="ecological-module-level">Level</label>
+                                <label for="ecological-module-level">等級</label>
                                 <input type="number" id="ecological-module-level" value="0" min="0" max="10">
                             </div>
                         </div>
 
                         <div class="module-card">
-                            <h4>Kitchen Module <span class="info-icon" data-tooltip="Lv.2: Premium Bread&#10;Lv.3: Premium Potato Soup&#10;Lv.4: Premium Sweet Rice Wine&#10;Lv.5: Premium Salted Lemon&#10;Lv.6: Premium Jello&#10;Lv.7: Premium Berry Chocolate Coconut Pudding">?</span></h4>
+                            <h4>廚房模組 <span class="info-icon" data-tooltip="Lv.2：高級麵包&#10;Lv.3：高級馬鈴薯湯&#10;Lv.4：高級甜米酒&#10;Lv.5：高級鹽漬檸檬&#10;Lv.6：高級果凍&#10;Lv.7：高級莓果巧克力椰子布丁">?</span></h4>
                             <div class="input-field">
-                                <label for="kitchen-module-level">Level</label>
+                                <label for="kitchen-module-level">等級</label>
                                 <input type="number" id="kitchen-module-level" value="0" min="0" max="10">
                             </div>
                         </div>
 
                         <div class="module-card">
-                            <h4>Resource Detector <span class="info-icon" data-tooltip="Lv.1: Quick Well Water&#10;Lv.2: Quick Sea Salt&#10;Lv.3: Quick Aromathyst&#10;Lv.4: Quick Fresh Water&#10;Lv.5: Quick Wool&#10;Lv.6: Quick Deep Rock Spring Water&#10;Lv.7: Quick Natural Mineral Spring Water&#10;Lv.8: Quick Scales">?</span></h4>
+                            <h4>資源探測器 <span class="info-icon" data-tooltip="Lv.1：高速井水&#10;Lv.2：高速海鹽&#10;Lv.3：高速香晶&#10;Lv.4：高速清水&#10;Lv.5：高速羊毛&#10;Lv.6：高速深岩泉水&#10;Lv.7：高速天然礦泉水&#10;Lv.8：高速鱗片">?</span></h4>
                             <div class="input-field">
-                                <label for="resource-detector-level">Level</label>
+                                <label for="resource-detector-level">等級</label>
                                 <input type="number" id="resource-detector-level" value="0" min="0" max="10">
                             </div>
                         </div>
 
                         <div class="module-card">
-                            <h4>Crafting Module <span class="info-icon" data-tooltip="Lv.1: Premium River-Washed Stones&#10;Lv.2: Premium Rose Freshener&#10;Lv.3: Advanced Lemon Incense&#10;Lv.4: Advanced Wind Chime&#10;Lv.5: Premium Soap&#10;Lv.6: Advanced Gemstone Dust&#10;Lv.7: Premium Mixed Perfume">?</span></h4>
+                            <h4>製作模組 <span class="info-icon" data-tooltip="Lv.1：高級河洗石&#10;Lv.2：高級玫瑰清新劑&#10;Lv.3：高級檸檬線香&#10;Lv.4：高級風鈴&#10;Lv.5：高級香皂&#10;Lv.6：高級寶石粉&#10;Lv.7：高級混合香水">?</span></h4>
                             <div class="input-field">
-                                <label for="crafting-module-level">Level</label>
+                                <label for="crafting-module-level">等級</label>
                                 <input type="number" id="crafting-module-level" value="0" min="0" max="10">
                             </div>
                         </div>
@@ -110,29 +127,29 @@
                 </div>
 
                 <div class="strategy">
-                    <h3>Strategy</h3>
-                    <div class="tabs" role="radiogroup" aria-label="Strategy">
-                        <label><input type="radio" name="strategy" id="strategy-level-up" value="level-up" checked> Level up</label>
-                        <label><input type="radio" name="strategy" id="strategy-priorities" value="priorities"> Priorities</label>
+                    <h3>策略</h3>
+                    <div class="tabs" role="radiogroup" aria-label="策略">
+                        <label><input type="radio" name="strategy" id="strategy-level-up" value="level-up" checked> 升級 RV</label>
+                        <label><input type="radio" name="strategy" id="strategy-priorities" value="priorities"> 優先順序</label>
                     </div>
 
                     <div id="priorities-config" style="display: none;">
-                        <p class="hint">Switch on what you want and drag to rank it. The plan makes as much of the first as it can, then as much of the next as that allows, and so on. Whatever's left always goes to Home Coins.</p>
+                        <p class="hint">開啟你想優先取得的項目並拖曳排序。計算器會依序盡可能滿足前面的目標，剩餘產能則用於家園幣。</p>
                         <ol class="priority-list" id="priority-list"></ol>
                     </div>
 
                     <div id="level-up-config">
-                        <p class="hint">Gets everything your next RV level costs as soon as possible, then earns as many Home Coins as that leaves room for.</p>
+                        <p class="hint">優先取得下一級 RV 所需的全部材料，完成後將剩餘產能用於賺取最多家園幣。</p>
                         <div class="input-row" id="level-up-target-row">
                             <div class="input-field">
-                                <label for="level-up-target">Level up to RV</label>
+                                <label for="level-up-target">升級至 RV</label>
                                 <select id="level-up-target"></select>
                             </div>
                         </div>
                         <div id="level-up-cost"></div>
                         <details class="explain" id="level-up-stock">
-                            <summary>What you already have</summary>
-                            <p class="hint small">Counts toward the level-up. Wood Blocks, Mineral Sand and lower tiers get processed up.</p>
+                            <summary>你目前擁有的材料</summary>
+                            <p class="hint small">會計入升級需求。木塊、礦砂與較低階材料會自動換算為高階材料。</p>
                             <div class="stock-grid" id="level-up-stock-grid"></div>
                         </details>
                     </div>
@@ -142,32 +159,32 @@
                     <label class="priority-switch season-switch">
                         <input type="checkbox" role="switch" id="season-on">
                         <span class="switch-track" aria-hidden="true"></span>
-                        <span class="season-title">Harvest Moon Festival</span>
+                        <span class="season-title">月祭活動</span>
                     </label>
                     <div id="season-config" hidden>
-                        <p class="hint">A seasonal event with its own currency, Moonray Wheat, which buys the season's seeds. Keeping enough wheat on hand is up to you; plans show how much their seeds use. Season items also earn Harvest Moon Points, which you can rank under Priorities.</p>
-                        <p class="assume-title">Recipe Notes</p>
+                        <p class="hint">月祭活動使用專屬貨幣「月光小麥」購買活動種子。是否維持足夠的小麥由你決定；方案會顯示種子消耗量。活動商品除了家園幣外也會取得月祭點數，可在「優先順序」中設定目標。</p>
+                        <p class="assume-title">配方筆記</p>
                         <div class="special-grid" id="season-notes"></div>
                     </div>
                 </div>
 
                 <details class="explain recipes-section" id="recipes-section">
-                    <summary>Recipes<span class="skip-count" id="recipe-count"></span></summary>
-                    <p class="assume-title">Special recipes</p>
-                    <p class="hint small">These take a rare currency to unlock. Plans only use the ones you tick.</p>
+                    <summary>配方<span class="skip-count" id="recipe-count"></span></summary>
+                    <p class="assume-title">特殊配方</p>
+                    <p class="hint small">這些配方需要稀有貨幣才能解鎖。只有勾選的配方會納入計算。</p>
                     <div class="special-grid" id="special-grid"></div>
-                    <p class="assume-title">Recipes to skip</p>
-                    <p class="hint small">Plans won't use these, e.g. recipes behind unlocks you don't have yet. You can also skip one straight from a plan with its ✕.</p>
+                    <p class="assume-title">略過配方</p>
+                    <p class="hint small">計算器不會使用這些配方，例如尚未解鎖的配方；你也可以在方案中直接按 ✕ 略過。</p>
                     <div class="skip-add">
-                        <input type="text" id="skip-input" list="skip-options" placeholder="Search recipes" autocomplete="off" aria-label="Recipe to skip">
-                        <button type="button" id="skip-add-btn" class="skip-add-btn">Skip</button>
+                        <input type="text" id="skip-input" list="skip-options" placeholder="搜尋配方" autocomplete="off" aria-label="要略過的配方">
+                        <button type="button" id="skip-add-btn" class="skip-add-btn">略過</button>
                     </div>
                     <datalist id="skip-options"></datalist>
                     <div class="skip-chips" id="skip-chips"></div>
                 </details>
                 <button id="optimize-btn" class="optimize-btn">
-                    <span class="btn-text">Find the best plan</span>
-                    <span class="btn-loading" style="display: none;">Solving...</span>
+                    <span class="btn-text">尋找最佳方案</span>
+                    <span class="btn-loading" style="display: none;">計算中…</span>
                 </button>
                 <div id="progress-bar-container" class="progress-bar-container" style="display: none;">
                     <div id="progress-bar-fill" class="progress-bar-fill"></div>
@@ -184,12 +201,12 @@
                         <div class="card-head">
                             <button type="button" class="collapse-toggle" id="aniimo-toggle" aria-expanded="false" aria-controls="aniimo-body">
                                 <span class="chevron" aria-hidden="true"></span>
-                                <h2>Aniimo Team</h2>
+                                <h2>Aniimo 隊伍</h2>
                             </button>
-                            <div class="tabs compact" role="radiogroup" aria-label="Aniimo setup">
-                                <label title="The best Aniimo you have, with each facility's personality"><input type="radio" name="aniimo-setup" id="aniimo-best" value="best" checked> Best</label>
-                                <label title="The lowest ability level each recipe accepts: the least you can get by with"><input type="radio" name="aniimo-setup" id="aniimo-minimum" value="minimum"> Minimum</label>
-                                <label title="Plan with the Aniimo you actually have"><input type="radio" name="aniimo-setup" id="aniimo-custom" value="custom"> My Aniimo</label>
+                            <div class="tabs compact" role="radiogroup" aria-label="Aniimo 配置">
+                                <label title="你擁有的最佳 Aniimo，並套用各設施的對應個性"><input type="radio" name="aniimo-setup" id="aniimo-best" value="best" checked> 最佳</label>
+                                <label title="各配方可接受的最低能力等級：以最低需求配置"><input type="radio" name="aniimo-setup" id="aniimo-minimum" value="minimum"> 最低需求</label>
+                                <label title="依照你實際擁有的 Aniimo 配置"><input type="radio" name="aniimo-setup" id="aniimo-custom" value="custom"> 我的 Aniimo</label>
                             </div>
                         </div>
                         <div class="aniimo-setup-panel" id="aniimo-setup-panel">
@@ -199,13 +216,13 @@
                         </div>
                         <p class="aniimo-count" id="aniimo-count" hidden><span id="aniimo-count-have">0</span><span class="aniimo-count-of" id="aniimo-count-of"></span></p>
                         <p class="collapsed-summary" id="aniimo-collapsed-summary"></p>
-                        <div class="ability-strip" id="aniimo-abilities" aria-label="Aniimo needed per ability"></div>
-                        <p class="hint small" id="aniimo-pending" style="display: none;">Still working this setup out...</p>
+                        <div class="ability-strip" id="aniimo-abilities" aria-label="各能力所需 Aniimo"></div>
+                        <p class="hint small" id="aniimo-pending" style="display: none;">正在計算此配置……</p>
                         <div id="aniimo-body" hidden>
                             <details class="explain">
-                                <summary>How the team is worked out</summary>
-                                <p><strong>Best</strong>: the best Aniimo you have of each ability (pick its level above), with each facility's personality. <strong>My Aniimo</strong>: the Aniimo you list; each works what its abilities allow, for the hours it has. <strong>Minimum</strong>: the lowest ability level each recipe accepts, with no personality bonus. The plan below follows whichever is picked.</p>
-                                <p>An Aniimo can take any job needing its ability at or below its level while it has hours to spare, as long as no two of its facilities want opposite personalities. It has four personalities, one from each pair, shown as letters over its portrait: Instinctive or Energetic (I/E), Nimble or Practical (N/S), Faithful or Tenacious (F/T), Playful or Judicious (P/J). Facilities with a resident Aniimo (Sandcastle, Dewy House and the like) need one each, and so does each Heat Furnace (Fire), Cooling Unit (Ice) and Sunlamp (Light) in use. With My Aniimo, Farmland and Woodland jobs only need someone able to do each; they're quick, so they aren't counted against anyone's hours. Not yet checked in game: each recipe's minimum ability level, the Farmland and Woodland jobs, and whether an environment building's Aniimo level or personality matters.</p>
+                                <summary>隊伍如何計算</summary>
+                                <p><strong><strong>最佳</strong>：每種能力都使用你擁有的最高等級 Aniimo，並套用設施個性。<strong>我的 Aniimo</strong>：使用你列出的 Aniimo，各自依能力與可用工時工作。<strong>最低需求</strong>：使用各配方接受的最低能力等級，不計個性加成。下方方案會依你選擇的模式計算。</p>
+                                <p>只要有剩餘工時，Aniimo 可以承擔不高於自身能力等級的工作；但同一隻 Aniimo 的設施不能要求互相衝突的個性。每隻 Aniimo 有四組個性，各取一種，會以字母顯示：直覺／活力（I/E）、敏捷／務實（N/S）、忠誠／堅毅（F/T）、活潑／明辨（P/J）。需要常駐 Aniimo 的設施（例如沙堡、露珠屋）各需要一隻；使用中的熱能爐（火）、製冷機（冰）與日光燈（光）也各需要一隻。在「我的 Aniimo」模式中，田地與林地只需有人具備對應能力即可；因為工作很快，不會計入 Aniimo 工時。尚未在遊戲中確認的部分包括：各配方最低能力等級、田地與林地工作，以及環境設施是否受 Aniimo 等級或個性影響。</p>
                             </details>
                             <div id="aniimo-summary"></div>
                         </div>
@@ -215,19 +232,19 @@
                         <!-- A level-up plan leads with the level-up, and its table's rate column
                              takes over the unit select and the coin rate below. -->
                         <div class="level-up-card" id="level-up-card" style="display: none;">
-                            <span class="summary-label" id="level-up-label">Level-Up</span>
+                            <span class="summary-label" id="level-up-label">升級</span>
                             <div class="summary-value" id="level-up-time">-</div>
                             <div id="level-up-lines"></div>
                         </div>
                         <div id="rate-block">
-                        <span class="summary-label" id="rate-label">Your Rate</span>
+                        <span class="summary-label" id="rate-label">你的產量</span>
                         <div class="rate-line" id="rate-line">
                             <span class="summary-value" id="plan-rate">-</span>
-                            <select id="rate-unit" class="rate-unit-select" aria-label="Rate unit">
-                                <option value="second">per second</option>
-                                <option value="minute">per minute</option>
-                                <option value="hour">per hour</option>
-                                <option value="day">per day</option>
+                            <select id="rate-unit" class="rate-unit-select" aria-label="產量單位">
+                                <option value="second">每秒</option>
+                                <option value="minute">每分鐘</option>
+                                <option value="hour">每小時</option>
+                                <option value="day">每天</option>
                             </select>
                         </div>
                         <div id="priority-rates"></div>
@@ -238,28 +255,28 @@
                     </div>
 
                     <div class="card production-steps" id="improve-card" style="display: none;">
-                        <h2>Opportunities</h2>
+                        <h2>提升機會</h2>
                         <div id="improve-list"></div>
                     </div>
 
                     <div class="card production-steps" id="seed-card" style="display: none;">
-                        <h2>Seeds to Plant</h2>
+                        <h2>種植所需種子</h2>
                         <p class="hint" id="seed-card-unit"></p>
                         <div class="seed-table" id="seed-table"></div>
                     </div>
 
                     <div class="card production-steps" id="profit-card" style="display: none;">
-                        <h2>Profit by Product</h2>
-                        <p class="hint">Net of seed costs.</p>
+                        <h2>商品收益</h2>
+                        <p class="hint">已扣除種子成本。</p>
                         <div id="profit-breakdown"></div>
                     </div>
 
                     <div class="card production-steps">
-                        <h2>What Each Facility Should Do</h2>
+                        <h2>各設施生產方案</h2>
                         <details class="explain">
-                            <summary>How to read this</summary>
-                            <p>Each row is one product; a facility split between several products gets a row for each. Crops that need a growing environment are grouped by the Heat Furnace, Cooling Unit or Sunlamp setting that covers them, with its layout. Everything else is grouped like the facility list.</p>
-                            <p>In the Aniimo column, each circle is an ability in its game color with the Aniimo level inside; a ring means the plan counts on the facility's personality bonus. Hover a circle for details.</p>
+                            <summary>如何閱讀</summary>
+                            <p>每一列代表一種商品；同一設施分配多種商品時會各列一列。需要生長環境的作物會依覆蓋它們的熱能爐、製冷機或日光燈環境分組，並顯示配置方式。其他設施則依設施分類顯示。</p>
+                            <p>Aniimo 欄位中的圓點代表對應能力與等級；帶有外圈表示方案依賴該設施的個性加成。將游標移到能力上可查看詳細資訊。</p>
                         </details>
                         <!-- Populated by app.js's renderFacilityPlan(): one section per
                              environment mode in use (Cool/Warm/Freeze/Scorching/Adequate) first,
@@ -269,37 +286,37 @@
                     </div>
 
                     <div class="card production-steps" id="layout-card" style="display: none;">
-                        <h2>Homeland Layout</h2>
+                        <h2>家園配置圖</h2>
                         <p class="hint" id="layout-summary"></p>
                         <details class="explain">
-                            <summary>How it's laid out</summary>
-                            <p>Every finished batch is carried to the Storage Unit (SU), so each facility is placed by its trips per hour times its straight-line distance to it: the busiest sit closest, idle ones go to the edge. Each environment building's plots can go anywhere its coverage still reaches them, so they sit on its Storage Unit side. No covered plot reaches another building's coverage, and a crop that needs an environment but is grown without one stays out of all of it, so every crop keeps the temperature the plan gave it. Crops that need no environment can go anywhere. Everything stays within the plots your RV level has open (each 20 by 15 tiles; in Advanced mode, the lowest RV level that allows what you entered), and the Storage Unit goes wherever the walking comes out least. Hover or tap a facility for its trips and distance. The diagram plays the homeland out in sped-up game time from when everything is set up: each finished batch goes to the Storage Unit (carrying takes no time here), and a recipe starts only once what it takes is there. A ring on each facility shows its batch, amber while it waits for materials. This is a close-packed arrangement worked out step by step, not a proven shortest one.</p>
+                            <summary>配置方式</summary>
+                            <p>每批完成的商品都會搬到儲存箱（SU），因此設施會依「每小時搬運次數 × 到儲存箱的直線距離」配置：最忙碌的設施靠近儲存箱，閒置設施放在外圍。環境設施的作物會放在其覆蓋範圍內，並盡量安排在靠近儲存箱的一側。所有設施都會維持在 RV 可開放的土地範圍內；配置圖也會以加速的遊戲時間模擬生產與搬運。這是逐步求出的緊密配置，不保證是數學上的最短距離配置。</p>
                         </details>
                         <div class="layout-controls">
                             <span class="layout-toggles">
-                                <label class="layout-whole"><input type="checkbox" id="layout-whole"> Show the whole homeland</label>
+                                <label class="layout-whole"><input type="checkbox" id="layout-whole"> 顯示完整家園</label>
                                 <label class="layout-whole"><input type="checkbox" id="layout-sim-on" checked> Simulate</label>
                             </span>
-                            <span class="layout-sim" id="layout-sim" hidden><span id="layout-clock">0h 00m</span><button type="button" class="toggle-button small" id="layout-replay">Replay</button></span>
+                            <span class="layout-sim" id="layout-sim" hidden><span id="layout-clock">0h 00m</span><button type="button" class="toggle-button small" id="layout-replay">重新播放</button></span>
                         </div>
                         <div class="layout-diagram" id="layout-diagram"></div>
                     </div>
 
                     <div class="card production-steps" id="goal-section">
-                        <h2>Set a Goal</h2>
-                        <p class="hint">Updates instantly from the plan above.</p>
+                        <h2>設定目標</h2>
+                        <p class="hint">會依上方方案即時更新。</p>
                         <div class="config-group">
                             <div class="input-row">
                                 <div class="input-field">
-                                    <label for="goal-target">Goal</label>
+                                    <label for="goal-target">目標</label>
                                     <select id="goal-target"></select>
                                 </div>
                                 <div class="input-field">
-                                    <label for="target-amount" id="target-amount-label">Target Home Coins</label>
+                                    <label for="target-amount" id="target-amount-label">目標家園幣</label>
                                     <input type="number" id="target-amount" value="1000" min="0">
                                 </div>
                                 <div class="input-field">
-                                    <label for="current-amount" id="current-amount-label">Current Home Coins</label>
+                                    <label for="current-amount" id="current-amount-label">目前家園幣</label>
                                     <input type="number" id="current-amount" value="0" min="0">
                                 </div>
                             </div>
@@ -308,11 +325,11 @@
                         <div class="result-summary">
                             <div class="summary-grid">
                                 <div class="summary-item">
-                                    <span class="summary-label">Total Time</span>
+                                    <span class="summary-label">總時間</span>
                                     <span class="summary-value" id="total-time">-</span>
                                 </div>
                                 <div class="summary-item">
-                                    <span class="summary-label" id="amount-produced-label">Home Coins Produced</span>
+                                    <span class="summary-label" id="amount-produced-label">家園幣產出</span>
                                     <span class="summary-value" id="amount-produced">-</span>
                                 </div>
                             </div>
@@ -320,17 +337,17 @@
                         <p class="level-up-coins" id="goal-also" style="display: none;"></p>
 
                         <div class="production-steps" id="product-breakdown-section" style="display: none;">
-                            <h3>Product Breakdown</h3>
+                            <h3>商品產出明細</h3>
                             <div class="table-wrapper">
                                 <table id="product-breakdown-table">
                                     <thead>
                                         <tr>
-                                            <th>Item</th>
-                                            <th>Facility</th>
-                                            <th>Amount</th>
-                                            <th id="product-breakdown-rate-header">Profit</th>
-                                            <th>Worth <span class="th-unit">Home Coins</span></th>
-                                            <th id="product-breakdown-points-header" hidden>Harvest Moon Points</th>
+                                            <th>物品</th>
+                                            <th>設施</th>
+                                            <th>數量</th>
+                                            <th id="product-breakdown-rate-header">收益</th>
+                                            <th>價值 <span class="th-unit">家園幣</span></th>
+                                            <th id="product-breakdown-points-header" hidden>月祭點數</th>
                                         </tr>
                                     </thead>
                                     <tbody id="product-breakdown-tbody"></tbody>
@@ -339,16 +356,16 @@
                         </div>
 
                         <div class="production-steps" id="seeds-needed-section" style="display: none;">
-                            <h3>Seeds Needed</h3>
+                            <h3>所需種子</h3>
                             <div class="table-wrapper">
                                 <table id="seeds-needed-table">
                                     <thead>
                                         <tr>
-                                            <th>Crop</th>
-                                            <th>Facility</th>
-                                            <th>Plots</th>
-                                            <th>Plantings/Plot</th>
-                                            <th>Total Seeds</th>
+                                            <th>作物</th>
+                                            <th>設施</th>
+                                            <th>數量</th>
+                                            <th>每塊田地種植次數</th>
+                                            <th>種子總數</th>
                                         </tr>
                                     </thead>
                                     <tbody id="seeds-needed-tbody"></tbody>
@@ -361,9 +378,9 @@
         </main>
 
         <footer>
-            <p>aniimax v<span id="version">-</span> | <a href="https://github.com/ae-bii/aniimax" target="_blank">github</a></p>
-            <p class="footer-note">Unofficial fan-made tool. Not affiliated with or endorsed by the makers of Aniimo.</p>
-            <p class="footer-note">Your inputs are saved in your browser and never sent anywhere.</p>
+            <p>aniimax v<span id="version">-</span> | <a href="https://github.com/ae-bii/aniimax" target="_blank">GitHub</a></p>
+            <p class="footer-note">非官方玩家製作工具，與 Aniimo 製作團隊沒有隸屬、合作或官方認可關係。</p>
+            <p class="footer-note">你的設定會儲存在瀏覽器中，不會傳送到任何伺服器。</p>
         </footer>
     </div>
 
@@ -371,12 +388,12 @@
     <div id="facilitiesModal" class="modal" onclick="closeFacilitiesOnBackdrop(event)">
         <div class="modal-content wide">
             <div class="modal-header">
-                <h2>Facility Recipes</h2>
+                <h2>設施配方</h2>
                 <button class="close-button" onclick="closeFacilities()">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="hint">Every recipe in the game data, grouped by facility. This is a reference table, not tied to your owned facility counts or levels.</p>
-                <p class="hint small" id="facilities-loading-hint">Loading recipe data...</p>
+                <p class="hint">遊戲資料中的所有配方，依設施分類。這是參考資料表，不會受到你實際擁有的設施數量與等級影響。</p>
+                <p class="hint small" id="facilities-loading-hint">正在載入配方資料……</p>
                 <div id="facilities-modal-container" class="facilities-container"></div>
             </div>
         </div>
@@ -386,50 +403,48 @@
     <div id="mathModal" class="modal" onclick="closeMathOnBackdrop(event)">
         <div class="modal-content modal-wide">
             <div class="modal-header">
-                <h2>How It Works</h2>
+                <h2>計算原理</h2>
                 <button class="close-button" onclick="closeMath()">&times;</button>
             </div>
             <div class="modal-body">
-                <h3>The Model</h3>
-                <p>Every plan is one mixed-integer program covering every recipe and facility at once, solved with <a href="https://highs.dev" target="_blank" rel="noopener">HiGHS</a>. Each recipe your facility levels and modules unlock, \(r\), gets a rate \(b_r\) (batches per second) and a whole number of units \(u_r\) set to it: plots for a crop, machines for a processed item.</p>
-                <div class="math-block">\[ \max \ \sum_i p_i \, s_i \;-\; \sum_r c_r \, b_r \]</div>
-                <p>where \(s_i\) is how much of item \(i\) is sold per second at price \(p_i\), and \(c_r\) is a crop's seed cost. During the Harvest Moon Festival, season crops' seeds cost Moonray Wheat instead, which plans take as unlimited. Subject to:</p>
+                <h3>模型</h3>
+                <p>每個方案都是一個同時涵蓋所有配方與設施的混合整數最佳化問題，使用 <a href="https://highs.dev" target="_blank" rel="noopener">HiGHS</a> 求解。你的設施等級與模組所解鎖的每個配方，都會得到一個生產速率與整數單位數：作物對應田地，加工品對應機器。</p>
+                <div class="math-block">\[ \max \ \sum_i p_i \, s_i \;-\sum_r c_r \, b_r \]</div>
+                <p>其中，\(s_i\) 是每秒出售的物品數量，\(p_i\) 是售價，\(c_r\) 是作物種子成本。月祭活動期間，活動作物的種子改用月光小麥支付，計算時視為供應充足。模型同時受到以下限制：</p>
                 <ul>
-                    <li><strong>Whole units.</strong> \(b_r \, t_r \le u_r\), with \(u_r\) a whole number and \(t_r\) the time per batch. A unit runs one recipe and is left running.</li>
-                    <li><strong>Item balance.</strong> Everything made covers what other recipes use plus what's sold. A quick variant makes the same item as the regular one.</li>
-                    <li><strong>What you own.</strong> For every facility and level \(L\), the units on recipes needing level \(L\) or higher add up to at most what you own at that level. A higher-level plot can run a lower-level recipe.</li>
-                    <li><strong>Growing environments.</strong> A crop wanting Cool, Warm, Freeze or Scorching grows at full speed on a plot covered by a Heat Furnace or Cooling Unit set to that mode, and more slowly on an uncovered one (see below). An Adequate crop needs a Sunlamp and grows nowhere else.</li>
+                    <li><strong>整數單位。</strong> \(b_r t_r \le u_r\)，其中 \(u_r\) 必須是整數，\(t_r\) 是每批次所需時間；一個單位會持續執行同一個配方。</li>
+                    <li><strong>物品平衡。</strong> 生產出的物品必須足以供其他配方使用與直接出售；高速版本與一般版本會產出相同物品。</li>
+                    <li><strong>你擁有的設施。</strong> 對每個設施與等級 \(L\)，需要等級 \(L\) 或更高的配方，其使用單位總數不能超過你擁有的對應等級數量。高等級設施可以執行低等級配方。</li>
+                    <li><strong>生長環境。</strong> 需要寒冷、溫暖、冰凍或炎熱的作物，在受到對應熱能爐或製冷機覆蓋的田地上可正常生長；沒有完整覆蓋時會變慢。需要適宜環境的作物則必須使用日光燈。</li>
                 </ul>
-                <p>HiGHS proves the plan is the best possible. On the rare setup where that takes longer than 30 seconds, it stops with the best plan so far and the results say how far from the best it could be. Every plan is then re-checked on its own before it's shown.</p>
+                <p>HiGHS 會證明方案是否為最佳解。極少數複雜配置可能超過 30 秒，這時會停止並採用目前找到的最佳方案，同時顯示距離理論最佳值可能還差多少。顯示前，每個方案也會再獨立檢查一次。</p>
 
-                <h3>Time per Batch</h3>
-                <p>Crops and trees take their grow time, less the Aniimo's watering: a plot asks for water twice as it grows, at two thirds and at one third of its time left, and each watering takes an eighth of the crop's own time off. A 40-minute crop comes in at 30 and a 4-minute one at 3. A crop short of its environment grows slower but still loses the same minutes, so a Warm crop with no building takes 50 minutes and is watered down to 40; that part isn't checked in game yet.</p>
-                <p>Everything else has a workload, and how long it takes depends on the Aniimo's Efficiency \(e\), which the facility screen shows, and a base rate \(r\):</p>
+                <h3>每批次時間</h3>
+                <p>作物與樹木的基礎時間是生長時間，再扣除 Aniimo 澆水帶來的時間縮減：作物生長期間會澆水兩次，每次澆水會減少作物自身時間的八分之一。例如 40 分鐘作物會變成 30 分鐘，4 分鐘作物會變成 3 分鐘。環境不足時作物仍會變慢，但澆水扣除的分鐘數相同；這部分尚未在遊戲中完全確認。</p>
+                <p>其他所有配方都有工作量，實際時間取決於設施畫面顯示的 Aniimo 效率 \(e\) 與基礎速率 \(r\)：</p>
                 <div class="math-block">\[ t = \frac{\text{workload}}{r \times e \times 1.2^{\,\text{personality}}} \]</div>
-                <p>At a processor, \(r\) is one workload a second. At a gathering facility (Well, Mine, Sandcastle, Dewy House and the like) and at the Dance Pad Polisher and Aniipod Maker, it's higher on recipes needing a higher ability level: 1 a second at level 1, 1.25 at level 2 and 1.5 at level 3. A Growth Fruit, 5,400 workload, takes an hour at 100%.</p>
-                <p>Efficiency \(e\) depends on the Aniimo's ability level compared with the level the recipe needs. At exactly the needed level it's 100%. At a processor, one level above the recipe's need is 300%, and each level after that adds 100% (400%, 500%). At a gathering facility, each level above adds half a workload a second, whatever the recipe needs, so against the recipe's own base rate that reads as +50% a level on a level-1 recipe, +40% on a level-2 one and +33% on a level-3 one. The Dance Pad Polisher and Aniipod Maker add 40% a level. The personality term counts only when the Aniimo has the facility's personality (+20%); the Polisher and Aniipod Maker have none. Ability levels stop at 4.</p>
+                <p>加工設施的基礎速率為每秒 1 工作量；水井、礦場、沙堡、露珠屋等採集設施，以及舞墊拋光機與 Aniipod 製造機，在高能力需求配方上會更快。效率會依 Aniimo 能力等級與配方需求等級計算；個性吻合設施時則有額外速度加成。</p>
 
-                <h3>Environment Coverage</h3>
-                <p>Environments are steps of temperature: Freeze -2, Cool -1, no building 0, Warm +1, Scorching +2. A crop grows at 100% at its own, 80% one step away, 50% two steps and 20% beyond that. An uncovered plot is neutral, so a Cool or Warm crop still manages 80% and a Freeze or Scorching one 50%, which is why plans sometimes grow them with no building at all. Adequate is separate: those crops need a Sunlamp. Efficiency stretches the grow time, so a Rose at 80% takes 50m instead of 40m for the same 8 roses, before watering.</p>
-                <p>Temperatures add where two buildings both reach a plot, capped at -2 and +2, and the game shows the result on the plot itself: Scorching and Cool together read Warm, Warm and Cool read Room temp. Plans use that, so a Heat Furnace on Scorching with four tiles of space to a Cooling Unit on Cool covers three zones at once, Scorching, Warm between them and Cool. Where the second building sits decides the split: every placement whose coverage still overlaps the first is worked out, in a row or on the diagonal, from touching (6 plots, 24 in the middle and 6, for Farmland) out to a corner's worth of overlap (22, 10 and 22). Two buildings this close cover fewer plots in total than two standing apart, so a plan only does it when the third zone is worth more. Place the pair exactly as the plan's diagram shows, and keep any other building's area clear of them.</p>
-                <p>A Cooling Unit is 2×2 tiles, and a Heat Furnace and Sunlamp one tile each; each covers a 9×9 area centered on it. A plot counts as covered if any part of it is inside, and everything snaps to quarter tiles. Every useful way one building can cover a mix of Farmland, Woodland and the rest is worked out once by exact packing; the plan then picks a mode and one of those mixes for each building.</p>
+                <h3>環境覆蓋</h3>
+                <p>環境溫度依序為：冰凍 -2、寒冷 -1、無設施 0、溫暖 +1、炎熱 +2。作物處於自身環境時為 100% 速度，相差一級為 80%，兩級為 50%，更遠則為 20%。無覆蓋田地視為中性，因此寒冷或溫暖作物仍可用 80% 速度生長；冰凍或炎熱作物則為 50%。「適宜」是獨立環境，需要日光燈。</p>
+                <p>兩個環境設施的覆蓋範圍重疊時，溫度會相加並限制在 -2 到 +2。最佳化器會考慮不同位置造成的覆蓋分區，並在家園配置圖中告訴你應該如何擺放。請依照方案圖放置環境設施，並避免其他設施干擾需要的覆蓋範圍。</p>
+                <p>製冷機占 2×2 格，熱能爐與日光燈各占 1×1 格；每個環境設施的有效覆蓋範圍以自身為中心。配置會以遊戲格線與實際設施尺寸計算。</p>
 
-                <h3>Level Up</h3>
-                <p>A level-up costs Home Coins \(C_0\) plus the materials it asks for, \(C_1\) and \(C_2\) (raw Wood Blocks and Mineral Sand up to RV 6, a Woodworking Bench item and a Chimney Kiln item from RV 7), and you may already have some of each, \(S_j\). The plan finds the most level-ups per day, \(\lambda\), it could keep up, where for Home Coins and each item:</p>
-                <div class="math-block">\[ \text{made}_j \ \ge\ \frac{\lambda \, (C_j - S_j)}{86400} \]</div>
-                <p>(\(\text{made}_j\) per second), so the level-up takes \(1/\lambda\) days. Stock of anything lower in a chain (Wood Blocks, Mineral Sand, a lower tier) counts toward what's made, since the Bench and Kiln process it up. Two more solves follow, each keeping what the last one found: the most Home Coins at that pace, then as much extra of the level-up items as spare Bench and Kiln time allows. That's why ore often finishes before wood and shows up as surplus.</p>
-                <p>Each tier takes 8 of the tier below (4 for the last), so the Bench and Kiln switch between tiers rather than running one recipe like other processors.</p>
+                <h3>升級</h3>
+                <p>RV 升級需要家園幣 \(C_0\) 與材料 \(C_1\)、\(C_2\)。前期主要是木塊與礦砂，後期則會使用木工台與煙囪窯加工出的升級材料。你已經擁有的庫存 \(S_j\) 也會計入。</p>
+                <div class="math-block">\[ \text{made}_j \ \ge \frac{\lambda \, (C_j - S_j)}{86400} \]</div>
+                <p>模型會找出每天可以維持的最高升級速度 \(\lambda\)，因此升級所需時間為 \(1/\lambda\) 天。低階材料也可以透過木工台與煙囪窯逐級加工，因此庫存會沿著材料鏈折算。</p>
 
-                <h3>Priorities</h3>
-                <p>The plan solves once per ticked priority, in your order. Each solve makes as much of its priority as it can while keeping at least what the earlier ones reached; a last solve then earns as many Home Coins as all of those leave room for. Aniimo EXP, Aniipods and, during the Harvest Moon Festival, Harvest Moon Points count as their own currencies, so the same model handles them like Home Coins.</p>
+                <h3>優先順序</h3>
+                <p>計算器會依照你設定的優先順序逐項求解。每一步盡可能滿足當前目標，同時保留前面目標已取得的結果；最後再把剩餘產能用於家園幣。Aniimo 經驗、Aniipod 與月祭點數也可以作為獨立目標。</p>
 
-                <h3>Time to Reach a Goal</h3>
-                <p>Each product starts adding up once its first batch clears its ingredient chain (its lead time), then keeps its steady rate:</p>
+                <h3>達成目標所需時間</h3>
+                <p>每項商品會在第一批完成所有前置材料後開始累積，也就是它的「前置時間」；之後按照穩定產率增加：</p>
                 <div class="math-block">\[ \text{amount}(t) = \sum_i \text{rate}_i \cdot \max(0,\ t - \text{lead}_i) \]</div>
-                <p>This only ever grows with \(t\), so the time to reach a target is found by binary search.</p>
+                <p>由於產量只會隨時間增加，因此可以使用二分搜尋快速找到達成目標所需的時間。</p>
 
-                <h3>The Backup Planner</h3>
-                <p>If the exact planner can't run (rare; reloading the page usually fixes it), an older planner steps in. It solves the same problem as a continuous linear program, rounds to whole plots and one recipe per machine, then re-solves. Its plans are usually close to the best but not guaranteed, and the results say when it was used.</p>
+                <h3>備用最佳化器</h3>
+                <p>如果精確最佳化器無法執行（通常重新整理頁面即可解決），系統會使用較舊的備用最佳化器。它會先用連續線性規劃近似同一問題，再將結果整理成整數設施配置並重新求解。備用方案通常接近最佳值，但不保證一定是全域最佳；結果頁會明確標示。</p>
             </div>
         </div>
     </div>
@@ -438,36 +453,36 @@
     <div id="helpModal" class="modal" onclick="closeHelpOnBackdrop(event)">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>How to Use</h2>
+                <h2>使用說明</h2>
                 <button class="close-button" onclick="closeHelp()">&times;</button>
             </div>
             <div class="modal-body">
-                <h3>1. Tell It What You've Built</h3>
-                <p><strong>Simple</strong>: pick your RV level, and the calculator assumes you've built and upgraded everything that level allows. <strong>Advanced</strong>: set the count and level of every facility and upgrade module yourself. In Advanced, "Fill from RV level" sets everything to what an RV level allows, as a starting point.</p>
-                <p>Under <strong>Recipes</strong>, special recipes (Rose Shortbread, Potato Kvass and a few others) take a rare currency to unlock, so plans leave them out until you tick the ones you have.</p>
-                <p>Also under <strong>Recipes</strong>, add anything you can't make yet, such as recipes behind unlocks you don't have. Plans won't use them. The ✕ next to a product in a plan skips it and plans again.</p>
+                <h3>1. 設定你的家園</h3>
+                <p><strong>簡易</strong>：選擇 RV 等級，計算器會假設你已建造並升級該等級允許的所有設施。<strong>進階</strong>：自行設定每種設施的數量、等級與升級模組。進階模式中的「依 RV 等級填入」可以先填入該 RV 等級可擁有的配置，再自行修改。</p>
+                <p>在<strong>配方</strong>中，特殊配方需要稀有貨幣解鎖；只有你勾選的特殊配方會納入計算。</p>
+                <p>你也可以在<strong>配方</strong>中加入目前無法生產的配方，計算器就不會使用它們。方案中的商品旁邊按下 ✕ 也可以直接略過並重新計算。</p>
 
-                <h3>2. Pick a Strategy</h3>
-                <p><strong>Level up</strong> gets everything your next RV level costs as soon as possible: its Home Coins plus Wood Blocks and Mineral Sand, or from RV 7 a Woodworking Bench item and a Chimney Kiln item. Under "What you already have", enter what you've got; Wood Blocks, Mineral Sand and lower tiers count too, since the Bench and Kiln process them up. The plan still earns as many Home Coins as it can on the way. In Advanced you can pick which RV level to plan for.</p>
-                <p><strong>Priorities</strong> ranks what you want: Home Coins, Aniimo EXP (Growth items from the Dance Pad Polisher), Aniipods (the best tier your Aniipod Maker can reach, since a better one catches better), Wood Blocks and Mineral Sand. Switch on the ones you want and drag them into order; the plan makes as much of the first as it can, then as much of the next as that allows, and whatever's left goes to Home Coins. The rate card shows each one.</p>
+                <h3>2. 選擇策略</h3>
+                <p><strong>升級 RV</strong>會盡快取得下一級 RV 所需的家園幣與升級材料；同時會在路上利用剩餘產能賺取家園幣。進階模式可以指定要規劃到哪個 RV 等級。</p>
+                <p><strong>優先順序</strong>可以排列你最想取得的目標，例如家園幣、Aniimo 經驗、Aniipod、木塊與礦砂。開啟目標後拖曳排序，計算器會依序盡可能滿足它們，剩餘產能則用於家園幣。</p>
 
-                <h3>3. Find the Best Plan</h3>
-                <p>Click "Find the best plan" to see how long the level-up takes (or your best rate) and what each facility should make. Set it up once and leave it running. Everything you enter is saved in your browser; "Clear saved values" resets it.</p>
+                <h3>3. 找到最佳方案</h3>
+                <p>按下「尋找最佳方案」後，計算器會告訴你升級需要多久（或目前最佳產率），以及每座設施應該生產什麼。設定完成後即可長時間放置運行；你的輸入會自動儲存在瀏覽器中。「清除已儲存設定」可以重設。</p>
 
-                <h3>4. Set a Goal (Optional)</h3>
-                <p>Pick what you're aiming for, enter the target amount and what you have now, and the card says how long it takes and what else you'll have by then. It updates instantly as you type.</p>
+                <h3>4. 設定目標（可選）</h3>
+                <p>選擇你想達成的目標，輸入目標數量與目前持有量，結果會告訴你需要多久，以及到達目標時還會額外擁有哪些物品。輸入數字時會即時更新。</p>
 
-                <h3>Understanding the Results</h3>
+                <h3>如何看懂結果</h3>
                 <ul>
-                    <li><strong>Aniimo Team</strong>: which Aniimo to keep on your homeland, for the fastest setup (Best) or the least you can get by with (Minimum). <strong>My Aniimo</strong> plans with the Aniimo you list instead and shows what each one does. Open it for the full list.</li>
-                    <li><strong>Level-Up</strong>: how soon you'll have everything the level-up costs, and how fast each cost comes in (pick the unit at the top of that column). The slowest one is in bold. Surplus is what's left over when it's ready, such as extra Home Coins or ore.</li>
-                    <li><strong>Your Rates</strong>: with Priorities, what the plan makes of each priority in your order, then Home Coins from what's left, per second, minute, hour or day.</li>
-                    <li><strong>Seeds to Plant</strong>: the seeds your Farmland and Woodland go through and what they cost, in total until the level-up with Level up, or at the chosen rate with Priorities.</li>
-                    <li><strong>Profit by Product</strong>: with Level up, what each product earns per hour and in total until the level-up is ready.</li>
-                    <li><strong>What Each Facility Should Do</strong>: what to set each facility to, all running at once. Recipes tagged "unverified" haven't been checked in game yet.</li>
-                    <li><strong>Opportunities</strong>: changes within your reach (a recipe to unlock, an Aniimo level, and in Advanced mode a module or facility) ranked by how much they'd improve the plan.</li>
-                    <li><strong>Homeland Layout</strong>: where to put each facility so the busiest are nearest the Storage Unit.</li>
-                    <li><strong>Set a Goal</strong>: with Priorities, how long it takes to reach a target amount of Home Coins or any priority that's on, and what else you'll have by then.</li>
+                    <li><strong>Aniimo 隊伍</strong>：顯示最佳、最低需求或你實際擁有的 Aniimo 配置，以及每隻 Aniimo 負責的工作。</li>
+                    <li><strong>升級</strong>：顯示完成升級所需時間、各材料取得速度，以及完成時的剩餘庫存。</li>
+                    <li><strong>你的產量</strong>：在優先順序模式下，依照你的目標順序顯示各項產量，並列出剩餘產能帶來的家園幣。</li>
+                    <li><strong>種植所需種子</strong>：顯示田地與林地消耗的種子數量與成本。</li>
+                    <li><strong>商品產出明細</strong>：在升級模式下，顯示各商品每小時收益，以及到升級完成前的總收益。</li>
+                    <li><strong>各設施生產方案</strong>：告訴你每座設施應該設定什麼生產內容。標示「未確認」的配方代表尚未在遊戲中驗證。</li>
+                    <li><strong>提升機會</strong>：列出你目前能做到、且最值得升級或解鎖的項目。</li>
+                    <li><strong>家園配置圖</strong>：顯示設施應該放在哪裡，並將忙碌的設施盡量靠近儲存箱。</li>
+                    <li><strong>達成目標</strong>：顯示達到指定家園幣或優先目標所需的時間，以及屆時會額外取得的物品。</li>
                 </ul>
             </div>
         </div>
@@ -479,9 +494,9 @@
             const button = document.getElementById('themeToggle');
             body.classList.toggle('light');
             if (body.classList.contains('light')) {
-                button.textContent = 'dark';
+                button.textContent = '深色';
             } else {
-                button.textContent = 'light';
+                button.textContent = '淺色';
             }
         }
         
