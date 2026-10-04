@@ -1,11 +1,11 @@
-﻿//! WebAssembly bindings for Aniimax.
+//! WebAssembly bindings for Aniimax.
 //!
 //! This module provides JavaScript-accessible functions for the production optimizer.
 
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::electric::{electric_compatible, electric_require, ElectricConfig};
+use crate::electric::{electric_require, ElectricConfig};
 use crate::models::{FacilityCounts, ModuleLevels, ProductionEfficiency, ProductionItem};
 use crate::optimizer::{
     calculate_efficiencies, calculate_energy_efficiencies, find_best_production_path,
@@ -1789,6 +1789,13 @@ impl PreparedInput {
             priorities: vec![],
             season_points,
             staffing: Vec::new(),
+            electric_enabled: false,
+            electric_generator_level: 0,
+            electric_generator_capacity: 0.0,
+            electric_boost_threshold: 0.0,
+            electric_demand: 0.0,
+            electric_efficiency: 1.0,
+            electric_units: Vec::new(),
         }
     }
 }

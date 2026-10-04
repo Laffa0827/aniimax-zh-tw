@@ -356,7 +356,7 @@ fn build_model<'a>(
 
         // E-mode is a shared-grid decision. Powered units may use the full generator capacity;
         // only the subset inside the boost threshold receives the extra 20% throughput.
-        if let Some(power) = electric.filter(|p| p.enabled && !takes_turns(recipe)) {
+        if electric.filter(|p| p.enabled && !takes_turns(recipe)).is_some() {
             if electric_compatible(&recipe.facility) && electric_require(&recipe.facility, recipe.facility_level).is_some() {
                 let powered = model.add(0.0, (0.0, max), true, VarKind::ElectricUnits(recipe));
                 let boosted = model.add(0.0, (0.0, max), true, VarKind::ElectricBoostUnits(recipe));
