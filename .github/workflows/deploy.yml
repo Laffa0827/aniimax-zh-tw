@@ -25,7 +25,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          target: wasm32-unknown-unknown
+          targetS: wasm32-unknown-unknown
 
       - name: Install wasm-pack
         run: cargo install wasm-pack
