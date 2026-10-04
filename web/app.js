@@ -3197,8 +3197,8 @@ function renderAniimoSummary(plan) {
     });
     // Environment buildings in use each keep an Aniimo busy (abilities confirmed in game; whether
     // level or personality matters isn't known yet, so any level is shown).
-    const needsAniimo = (building, units, place) => {
-        const ability = ENVIRONMENT_BUILDING_ABILITY[building];
+    const needsAniimo = (building, units, place, requiredAbility = null) => {
+        const ability = requiredAbility || ENVIRONMENT_BUILDING_ABILITY[building];
         if (!ability || !units) return;
         const key = `${ability} (environment)`;
         if (!groups.has(key)) {
@@ -3208,6 +3208,14 @@ function renderAniimoSummary(plan) {
         g.busy += units;
         g.where.set(place, (g.where.get(place) || 0) + units);
     };
+    // The Crackle Generator itself needs one dedicated Lightning Aniimo while E-mode is on.
+    // The current electric model has one shared generator, so this is one full-time Lightning
+    // worker regardless of generator level. Keep it in the same team accounting as other
+    // always-on buildings so it counts against the homeland's Aniimo capacity.
+    if (plan.electric_enabled) {
+        needsAniimo('Crackle Generator', 1, `Crackle Generator（Lv.${plan.electric_generator_level || 1}）`, 'Lightning');
+    }
+
     // Two buildings placed to overlap report a zone each, all named after the first of them, so
     // count the pair once and give each building its own Aniimo.
     const pairUnits = new Map();

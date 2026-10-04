@@ -696,6 +696,31 @@ fn build_model<'a>(
     // Every environment building in use is staffed all day by a member with its ability.
     if let Some(crew) = facility_counts.crew() {
         let mut busy: Vec<Vec<(usize, f64)>> = vec![Vec::new(); crew.members.len()];
+
+        // The Crackle Generator itself is staffed continuously by one Lightning Aniimo while
+        // E-mode is enabled. This is separate from powered production facilities: the generator
+        // is a shared piece of infrastructure, so its worker does not disappear when no powered
+        // facility happens to be running a recipe. One generator is currently modeled.
+        if electric.is_some_and(|p| p.enabled) {
+            let mut generator_staffed = Vec::new();
+            for (member, aniimo) in crew.members.iter().enumerate() {
+                if aniimo.count == 0 || aniimo.level("Lightning") == 0 {
+                    continue;
+                }
+                let staff = model.add(
+                    0.0,
+                    (0.0, aniimo.count as f64),
+                    true,
+                    VarKind::Staff { building: "Crackle Generator".to_string(), member },
+                );
+                generator_staffed.push((staff, 1.0));
+                busy[member].push((staff, 1.0));
+            }
+            // Exactly one full-time Lightning worker is needed. The integer staff variables and
+            // this lower bound make the requirement impossible to satisfy without one.
+            model.constrain(generator_staffed, ComparisonOp::Ge, 1.0);
+        }
+
         for (&(recipe, rate), &(_, units)) in rate_of.iter().zip(&units_of) {
             let Some(member) = recipe.crew.filter(|&m| m < busy.len()) else { continue };
             if crew.residents.contains(&recipe.facility) {

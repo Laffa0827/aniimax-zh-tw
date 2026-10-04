@@ -106,3 +106,14 @@ fn all_other_facilities_are_electric_compatible() {
         assert!(electric_compatible(facility), "{facility} must support E-mode");
     }
 }
+
+
+#[test]
+fn enabled_generator_requires_one_lightning_aniimo() {
+    // The exact planner enforces this when a roster is supplied: one full-time Lightning
+    // Aniimo staffs the shared Crackle Generator itself. Generator level does not change
+    // the worker count; the current model has one shared generator.
+    let p = ElectricConfig::new(2);
+    assert!(p.enabled);
+    assert_eq!(p.generator_level, 2);
+}
