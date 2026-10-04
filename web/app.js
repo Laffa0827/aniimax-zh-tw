@@ -6,7 +6,7 @@ import {
     LEVEL_UP_COSTS, LEVEL_UP_CHAINS, SPECIAL_RECIPES, SEASON, ANIIPOD_TIERS, PERSONALITY_PAIRS, personalityLetter, opposedPersonality,
 } from './facility-config.js';
 import { createShareUrl, readShareHash, urlWithoutShare } from './share-config.js';
-import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhJob, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js';
+import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhJob, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js?v=20261004';
 
 let wasmReady = false;
 
@@ -207,7 +207,7 @@ let lastGoalResult = null;
 const CURRENCY_LABELS = {
     coins: '家園幣',
     aniimo_exp: 'Aniimo 經驗',
-    aniipods: '謎立方',
+    aniipods: 'Aniipod',
 };
 
 // Multiplier from the solver's native per-second rate to each display unit, and the short suffix
@@ -2107,8 +2107,8 @@ function attachSeasonHandlers() {
 // Every recipe plans may not use: the player's skips and any special recipe not unlocked.
 function excludedRecipes() {
     const locked = [...SPECIAL_RECIPES, ...SEASON.recipeNotes].map(r => r.name).filter(name => !unlockedSpecial.has(name));
-    // Going for 謎立方s means the best tier only; the others would be cheaper but catch worse.
-    const best = wants謎立方s() ? best謎立方() : null;
+    // Going for Aniipods means the best tier only; the others would be cheaper but catch worse.
+    const best = wantsAniipods() ? bestAniipod() : null;
     const lesser = best ? ANIIPOD_TIERS.filter(name => name !== best) : [];
     return [...new Set([...skippedRecipes, ...locked, ...lesser])];
 }
@@ -2312,7 +2312,7 @@ function isLevelUpStrategy() {
 const PRIORITY_TARGETS = [
     { id: 'coins', label: '家園幣' },
     { id: 'aniimo_exp', label: 'Aniimo 經驗' },
-    { id: 'aniipods', label: '謎立方' },
+    { id: 'aniipods', label: 'Aniipod' },
     { id: 'Wood Blocks', label: '木塊' },
     { id: 'Mineral Sand', label: '礦砂' },
     { id: 'season_points', label: zhItem(SEASON.points), season: true },
@@ -2339,18 +2339,18 @@ function activePriorities() {
     return isPriorityStrategy() ? shownPriorities().filter(p => p.on).map(p => p.target) : [];
 }
 
-function wants謎立方s() {
+function wantsAniipods() {
     return activePriorities().includes('aniipods');
 }
 
-// A priority's name, with the 謎立方 tier the plan would make.
-function priorityLabel(target, aniipod = best謎立方()) {
-    if (target === 'aniipods') return aniipod ? prettyItem(aniipod) : '謎立方s';
+// A priority's name, with the Aniipod tier the plan would make.
+function priorityLabel(target, aniipod = bestAniipod()) {
+    if (target === 'aniipods') return aniipod ? prettyItem(aniipod) : 'Aniipods';
     return PRIORITY_TARGETS.find(t => t.id === target)?.label || CURRENCY_LABELS[target] || target;
 }
 
 function renderPriorities() {
-    const best = best謎立方();
+    const best = bestAniipod();
     const shown = shownPriorities();
     document.getElementById('priority-list').innerHTML = shown.map((p, at) => {
         // Indices into `priorityOrder`, which also holds any priority that isn't shown.
@@ -2358,7 +2358,7 @@ function renderPriorities() {
         const above = at > 0 ? priorityOrder.indexOf(shown[at - 1]) : -1;
         const below = at < shown.length - 1 ? priorityOrder.indexOf(shown[at + 1]) : -1;
         const label = priorityLabel(p.target, best);
-        const note = p.target === 'aniipods' && !best ? ' <span class="hint small">（尚未擁有 謎立方 製造機）</span>' : '';
+        const note = p.target === 'aniipods' && !best ? ' <span class="hint small">（尚未擁有 Aniipod 製造機）</span>' : '';
         return `
         <li class="priority${p.on ? '' : ' off'}" draggable="true" data-index="${i}">
             <span class="drag-handle" aria-hidden="true">⋮⋮</span>
@@ -2429,12 +2429,12 @@ function attachPriorityHandlers() {
     });
 }
 
-// The best 謎立方 the owned 謎立方 Maker can make, or null without one. A better 謎立方
+// The best Aniipod the owned Aniipod Maker can make, or null without one. A better Aniipod
 // catches better, so the strategy makes only this one.
-function best謎立方() {
+function bestAniipod() {
     const tiers = isSimpleMode()
-        ? simpleSetup(selectedHomeLevel()).facilities['謎立方 Maker']
-        : facilityTiers['謎立方 Maker'];
+        ? simpleSetup(selectedHomeLevel()).facilities['Aniipod Maker']
+        : facilityTiers['Aniipod Maker'];
     const level = Math.max(0, ...(tiers || []).filter(t => t.count > 0).map(t => t.level));
     return level > 0 ? ANIIPOD_TIERS[Math.min(level, ANIIPOD_TIERS.length) - 1] : null;
 }
@@ -3752,7 +3752,7 @@ function updateRateDisplay(pickUnit = false) {
     if (!lastPlan || !lastPlan.success) return;
     const select = document.getElementById('rate-unit');
     const rows = planContext && !planContext.levelUp ? priorityRows(lastPlan) : null;
-    // Step the unit up until the smallest rate reads at least 1 (謎立方s per hour, Rough Lumber
+    // Step the unit up until the smallest rate reads at least 1 (Aniipods per hour, Rough Lumber
     // per hour, not 0.01 per second); a plain coin rate only needs to read above zero.
     const costRates = (lastPlan.level_up?.requirements || []).map(r => r.per_second);
     const rates = (rows ? rows.map(r => r.perSecond) : costRates).filter(r => r > 1e-9);
@@ -3780,7 +3780,7 @@ function updateRateDisplay(pickUnit = false) {
     const amount = formatRate;
     const body = rows.map(r => {
         const why = r.perSecond <= 1e-9 && r.missing ? `<span class="hint small">${r.missing}</span>` : '';
-        // Aniimo EXP names the Growth items making it; an 謎立方 row is already named by tier.
+        // Aniimo EXP names the Growth items making it; an Aniipod row is already named by tier.
         const made = r.target === 'aniimo_exp'
             ? r.items.filter(([, n]) => n > 1e-9).map(([item, n]) => `${amount(n * multiplier)} ${prettyItem(item)}`).join(', ')
             : '';
@@ -3806,7 +3806,7 @@ function updateRateDisplay(pickUnit = false) {
 function priorityRows(plan) {
     const missing = {
         aniimo_exp: planContext?.hasPolisher ? null : '尚未擁有舞墊拋光機',
-        aniipods: planContext?.aniipod ? null : '尚未擁有 謎立方 製造機',
+        aniipods: planContext?.aniipod ? null : '尚未擁有 Aniipod 製造機',
     };
     const rows = (plan.priorities || []).map((p, i) => ({
         rank: i + 1,
@@ -3971,7 +3971,7 @@ async function runFindPlan() {
             target: levelUpTarget(),
             unavailable: levelUpUnavailable(),
             ready: !!(input.level_up && input.level_up.cost.every(([name, need]) => stockAmount(name) >= need)),
-            aniipod: wants謎立方s() ? best謎立方() : null,
+            aniipod: wantsAniipods() ? bestAniipod() : null,
             hasPolisher: (input.facilities['Dance Pad Polisher'] || []).some(t => t.count > 0),
             // Only what the player skipped; locked special recipes are the default, not news.
             skipped: [...skippedRecipes].sort((a, b) => prettyItem(a).localeCompare(prettyItem(b))),
@@ -4121,7 +4121,7 @@ function timeToMake(row, needed) {
     return hi;
 }
 
-// What else the plan makes by the time the goal is met, e.g. "4.6M Home Coins, 39 謎立方 Mega",
+// What else the plan makes by the time the goal is met, e.g. "4.6M Home Coins, 39 Aniipod Mega",
 // each counted from its first batch as the goal itself is.
 function renderGoalAlso(rows, chosen, seconds, result) {
     const el = document.getElementById('goal-also');
