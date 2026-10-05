@@ -1810,6 +1810,7 @@ impl PreparedInput {
             staffing: Vec::new(),
             electric_enabled: false,
             electric_generator_level: 0,
+            electric_strategy: "combined".to_string(),
             electric_generator_capacity: 0.0,
             electric_boost_threshold: 0.0,
             electric_demand: 0.0,
