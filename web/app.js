@@ -6,7 +6,7 @@ import {
     LEVEL_UP_COSTS, LEVEL_UP_CHAINS, SPECIAL_RECIPES, SEASON, ANIIPOD_TIERS, PERSONALITY_PAIRS, personalityLetter, opposedPersonality,
 } from './facility-config.js?v=20261005-13';
 import { createShareUrl, readShareHash, urlWithoutShare } from './share-config.js?v=20261005-13';
-import { generatorLevelForRv, generatorLabel, relayPoleCapForRv } from './electric-config.js?v=20261005-13';
+import { generatorLevelForRv, generatorLabel, relayPoleCapForRv } from './electric-config.js?v=20261005-14';
 import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhJob, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js?v=20261005-13';
 
 let wasmReady = false;
@@ -1864,7 +1864,6 @@ function startProgress(input, runId) {
     const steps = [
         ...priorities.map(target => ({ key: `priority:${target}`, label: `最多${priorityLabel(target, planContext.aniipod)}` })),
         { key: 'plan', label: levelUp ? '最快升級' : priorities.length ? '剩餘時間賺取最多家園幣' : '最多家園幣' },
-        { key: 'electric-layout', label: '電力設施配置' },
         { key: 'improve', label: '提升機會' },
         { key: 'minimum', label: '最低需求隊伍' },
     ];
@@ -1891,7 +1890,7 @@ function setStep(key, state, detail, proven) {
     let step = progress.steps.find(s => s.key === key);
     if (!step && key === 'backup') {
         step = { key, label: '備用最佳化器', state: 'pending' };
-        const insertAt = progress.steps.findIndex(s => s.key === 'electric-layout');
+        const insertAt = progress.steps.findIndex(s => s.key === 'improve');
         progress.steps.splice(insertAt < 0 ? progress.steps.length : insertAt, 0, step);
     }
     if (!step) return;
