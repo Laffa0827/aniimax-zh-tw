@@ -2956,6 +2956,17 @@ tr:hover .skip-row,
 
 .electric-summary-grid strong { margin-top: .2rem; }
 
+.electric-tradeoff-box { margin-top: .9rem; }
+.electric-tradeoff-row {
+    display: grid; grid-template-columns: minmax(150px, 1fr) minmax(250px, 1.4fr) minmax(180px, 1fr);
+    gap: .75rem; align-items: center; padding: .7rem 0; border-top: 1px solid var(--border);
+}
+.electric-tradeoff-row > div { min-width: 0; }
+.electric-tradeoff-row strong { display: inline-block; margin-right: .45rem; }
+@media (max-width: 760px) {
+    .electric-tradeoff-row { grid-template-columns: 1fr; gap: .35rem; }
+}
+
 
 .electric-strategy {
     margin-top: .85rem;

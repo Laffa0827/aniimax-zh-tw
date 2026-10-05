@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::electric::{electric_require, ElectricConfig};
+use crate::electric::{electric_facility_code, electric_require, ElectricConfig};
 use crate::models::{FacilityCounts, ModuleLevels, ProductionEfficiency, ProductionItem};
 use crate::optimizer::{
     calculate_efficiencies, calculate_energy_efficiencies, find_best_production_path,
@@ -782,6 +782,9 @@ pub struct JsPlanInput {
     /// `raw` = Mine/Well only, `workstations` = processing facilities only, `combined` = both.
     #[serde(default = "default_electric_strategy")]
     pub electric_strategy: String,
+    /// Internal-only counterfactual: temporarily forbid E-mode on one facility type.
+    #[serde(default)]
+    pub electric_forbid_facility: String,
 }
 
 /// The player's Aniimo, and what the page knows of the facilities they work (see
@@ -832,7 +835,11 @@ impl JsRoster {
 impl JsPlanInput {
     fn electric_config(&self) -> Option<ElectricConfig> {
         (self.electric_enabled && self.home_level >= 12)
-            .then(|| ElectricConfig::new_with_strategy(self.generator_level, electric_strategy_id(&self.electric_strategy)))
+            .then(|| ElectricConfig::new_with_strategy_and_forbidden(
+                self.generator_level,
+                electric_strategy_id(&self.electric_strategy),
+                electric_facility_code(&self.electric_forbid_facility),
+            ))
     }
 
     /// Builds a [`FacilityCounts`] from the `facilities` map.

@@ -117,3 +117,10 @@ fn enabled_generator_requires_one_lightning_aniimo() {
     assert!(p.enabled);
     assert_eq!(p.generator_level, 2);
 }
+
+#[test]
+fn counterfactual_forbidden_facility_is_excluded() {
+    let p = ElectricConfig::new_with_strategy_and_forbidden(2, 1, 1);
+    assert!(!p.allows_facility("Mine"));
+    assert!(p.allows_facility("Well"));
+}

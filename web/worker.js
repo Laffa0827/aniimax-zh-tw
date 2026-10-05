@@ -188,6 +188,36 @@ async function exactPlanJson(pkg, payload, step = () => {}, first = () => {}) {
 // 'level_up' for the soonest level-up; `base` and each candidate are plan inputs. Each input's
 // best `measure` is solved, and where that doesn't move, the most Home Coins while keeping it.
 // Reports one `{ index, top, coins, proven }` per input as it goes, the base first (index -1).
+
+// Counterfactual electric analysis: re-solve the same production goal while forbidding
+// E-mode on one facility type. This answers "what would happen if this equal-cost E-mode slot
+// were unavailable?" using the same exact optimizer rather than a heuristic per-watt score.
+async function electricTradeoffs(pkg, payload, report = () => {}) {
+    const { input, facilities } = JSON.parse(payload);
+    const results = [];
+    for (const facility of facilities || []) {
+        report({ facility, state: 'start' });
+        const counter = { ...input, electric_forbid_facility: facility };
+        try {
+            const json = await exactPlanJson(pkg, JSON.stringify(counter));
+            const plan = JSON.parse(json);
+            results.push({
+                facility,
+                success: !!plan.success,
+                rate_per_second: Number(plan.rate_per_second || 0),
+                electric_demand: Number(plan.electric_demand || 0),
+                electric_units: plan.electric_units || [],
+                proven_optimal: plan.proven_optimal,
+                error: plan.success ? null : (plan.error || '無法完成反算'),
+            });
+        } catch (error) {
+            results.push({ facility, success: false, rate_per_second: null, error: error?.message || String(error) });
+        }
+        report({ facility, state: 'done' });
+    }
+    return JSON.stringify(results);
+}
+
 async function rankImprovements(pkg, payload, report) {
     const { measure, base, candidates, baseTop: given } = JSON.parse(payload);
     const topOf = async (input) => {
@@ -245,6 +275,11 @@ self.onmessage = async (event) => {
     const { id, type, payload } = event.data;
     try {
         const pkg = await ready;
+        if (type === 'electric_tradeoffs') {
+            const result = await electricTradeoffs(pkg, payload, (state) => self.postMessage({ id, type: 'progress', count: { electric_tradeoff: state } }));
+            self.postMessage({ id, ok: true, result });
+            return;
+        }
         if (type === 'rank_improvements') {
             await rankImprovements(pkg, payload, (result) => self.postMessage({ id, type: 'progress', count: result }));
             self.postMessage({ id, ok: true, result: null });

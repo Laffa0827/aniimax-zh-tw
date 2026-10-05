@@ -11,11 +11,13 @@ pub struct ElectricConfig {
     pub generator_level: u8,
     /// 0 = combined, 1 = raw materials (Mine/Well), 2 = workstations/processing.
     pub strategy: u8,
+    /// Facility code to exclude from E-mode during counterfactual trade-off analysis. 0 = none.
+    pub forbidden_facility: u8,
 }
 
 impl Default for ElectricConfig {
     fn default() -> Self {
-        Self { enabled: false, generator_level: 1, strategy: 0 }
+        Self { enabled: false, generator_level: 1, strategy: 0, forbidden_facility: 0 }
     }
 }
 
@@ -27,10 +29,17 @@ impl ElectricConfig {
     }
 
     pub fn new_with_strategy(generator_level: u8, strategy: u8) -> Self {
-        Self { enabled: true, generator_level: generator_level.clamp(1, 5), strategy: strategy.min(2) }
+        Self { enabled: true, generator_level: generator_level.clamp(1, 5), strategy: strategy.min(2), forbidden_facility: 0 }
+    }
+
+    pub fn new_with_strategy_and_forbidden(generator_level: u8, strategy: u8, forbidden_facility: u8) -> Self {
+        Self { enabled: true, generator_level: generator_level.clamp(1, 5), strategy: strategy.min(2), forbidden_facility }
     }
 
     pub fn allows_facility(self, facility: &str) -> bool {
+        if self.forbidden_facility != 0 && electric_facility_code(facility) == self.forbidden_facility {
+            return false;
+        }
         match self.strategy {
             1 => matches!(facility, "Mine" | "Well"),
             2 => !matches!(facility, "Mine" | "Well"),
@@ -38,7 +47,8 @@ impl ElectricConfig {
         }
     }
 
-    /// Decoded generator capacity: 600 / 800 / 1000 / 1200 / 1500.
+
+/// Decoded generator capacity: 600 / 800 / 1000 / 1200 / 1500.
     pub fn capacity(self) -> f64 {
         [600.0, 800.0, 1000.0, 1200.0, 1500.0][self.generator_level.saturating_sub(1).min(4) as usize]
     }
@@ -60,6 +70,29 @@ impl ElectricConfig {
         } else {
             ratio.min(1.0)
         }
+    }
+}
+
+/// Stable internal codes used only by the UI's counterfactual E-mode analysis.
+pub fn electric_facility_code(facility: &str) -> u8 {
+    match facility {
+        "Mine" => 1,
+        "Well" => 2,
+        "Carousel Mill" => 3,
+        "Crafting Table" => 4,
+        "Claw Game Cooker" => 5,
+        "Jukebox Dryer" => 6,
+        "Simmering Pot" => 7,
+        "Phonolfactory Table" => 8,
+        "Bouncy Brew Keg" => 9,
+        "Blazing Stove" => 10,
+        "Pickling Jar" => 11,
+        "Joy Wheel Loom" => 12,
+        "Woodworking Bench" => 13,
+        "Chimney Kiln" => 14,
+        "Dance Pad Polisher" => 15,
+        "Aniipod Maker" => 16,
+        _ => 0,
     }
 }
 
