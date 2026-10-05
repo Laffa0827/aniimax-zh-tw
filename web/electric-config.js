@@ -63,6 +63,23 @@ export function generatorLevelForRv(rv) {
     return 5;
 }
 
+
+// Verified in-game: the relay-pole hard cap is determined by Homeland/RV level.
+// RV 12-13: 6, 14-15: 12, 16-17: 18, 18-19: 24, 20: 30.
+export const RELAY_POLE_CAP_BY_RV = Object.freeze({
+    12: 6, 13: 6,
+    14: 12, 15: 12,
+    16: 18, 17: 18,
+    18: 24, 19: 24,
+    20: 30,
+});
+
+export function relayPoleCapForRv(rv) {
+    const level = Math.max(1, Math.min(20, Number(rv) || 1));
+    if (level < 12) return 0;
+    return RELAY_POLE_CAP_BY_RV[level] ?? 30;
+}
+
 export function generatorLabel(level) {
     const i = Math.max(1, Math.min(5, Number(level) || 1)) - 1;
     return `Lv.${i + 1} · ${ELECTRIC_GENERATOR.capacity[i]}W · 120% Boost 門檻 ${ELECTRIC_GENERATOR.boostThreshold[i]}W`;

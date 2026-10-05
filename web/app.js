@@ -1393,17 +1393,30 @@ function renderElectricLayout(plan) {
     card.style.display = 'block';
     const strategy = plan.electric_strategy || selectedElectricStrategy();
     const generator = Number(plan.electric_generator_level || 1);
-    const poles = Math.max(0, Math.min(6, Math.ceil(Math.max(0, powered - 4) / 4)));
-    const rows = 13, cols = 13;
+    // Relay-pole hard cap is determined by Home/RV level, NOT Generator level.
+    // Verified from the in-game custom-settings screens: RV12-13=6, RV14-15=12,
+    // RV16-17=18, RV18-19=24, RV20=30, increasing by 6 every two RV levels from RV12 through RV20.
+    const homeLevel = Math.max(1, Number(layoutHomeLevel() || selectedHomeLevel() || 1));
+    const relayPoleCap = relayPoleCapForRv(homeLevel);
+    const polesNeeded = Math.ceil(Math.max(0, powered - 4) / 4);
+    const poles = Math.min(relayPoleCap, polesNeeded);
+    const rows = 15, cols = 15;
     const cells = Array.from({length: rows * cols}, () => ({ label: '', cls: '' }));
     const at = (r,c,label,cls) => { if(r>=0&&r<rows&&c>=0&&c<cols) cells[r*cols+c]={label,cls}; };
-    const centerR=6, centerC=6;
+    const centerR=7, centerC=7;
     at(centerR, centerC, '發電機', 'generator');
-    const polePos = [[2,6],[6,2],[6,10],[10,6],[3,3],[9,9]];
+    // Up to RV20's verified 30-pole cap; positions are spread around the guide grid.
+    const polePos = [
+      [2,7],[7,2],[7,12],[12,7],[3,3],[11,11],
+      [3,11],[11,3],[1,4],[1,10],[4,1],[10,1],
+      [4,13],[10,13],[13,4],[13,10],[2,2],[2,12],
+      [12,2],[12,12],[5,2],[9,2],[5,12],[9,12],
+      [2,5],[2,9],[12,5],[12,9],[5,5],[9,9]
+    ];
     polePos.slice(0,poles).forEach((p,i)=>at(p[0],p[1],`樁${i+1}`, 'pole'));
     const facilityRows = (plan.electric_units || []).map(([facility,item,units,power]) => ({facility,item,units:Number(units||0),power:Number(power||0)}));
     let slot = 0;
-    const positions = [[4,4],[4,8],[8,4],[8,8],[3,6],[6,3],[6,9],[9,6],[2,4],[4,2],[2,8],[8,2],[10,4],[4,10],[10,8],[8,10]];
+    const positions = [[4,4],[4,7],[4,10],[7,4],[7,10],[10,4],[10,7],[10,10],[3,6],[3,8],[6,3],[6,11],[8,3],[8,11],[11,6],[11,8],[5,5],[5,9],[9,5],[9,9],[2,5],[2,9],[12,5],[12,9]];
     facilityRows.forEach(row=>{
         for(let n=0;n<row.units;n++){
             const pos=positions[slot++ % positions.length];
@@ -1416,13 +1429,13 @@ function renderElectricLayout(plan) {
     body.innerHTML = `
       <div class="electric-layout-head">
         <strong>建議的電力配置</strong>
-        <span class="hint small">${electricStrategyLabel(strategy)} · 僅顯示 120% E-MODE 配置</span>
+        <span class="hint small">${electricStrategyLabel(strategy)} · 只顯示實際接電設施 · 120% E-MODE</span>
       </div>
       <div class="electric-layout-wrap">
         <div class="electric-grid" style="--electric-cols:${cols};">${grid}</div>
         <div class="electric-layout-notes">
           <div><strong>發電機 Lv.${generator}</strong>：置於配置中心。</div>
-          <div><strong>發電樁 × ${poles}</strong>：用於延伸電力網；樁與發電機／其他樁請保持至少 1 小格距離。</div>
+          <div><strong>發電樁 × ${poles}</strong>：本方案需求 ${polesNeeded} 根；RV${homeLevel} 硬上限 ${relayPoleCap} 根（上限由家園等級決定）。</div>
           <div><strong>電網需求</strong>：${demand} / ${capacity}W。</div>
           <div><strong>120% 門檻</strong>：${threshold}W；目前方案 ${demand <= threshold ? '符合' : '不符合'}。</div>
           <div class="electric-layout-legend">${legend}</div>
