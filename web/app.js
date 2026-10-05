@@ -4046,63 +4046,6 @@ function updateRateUnitDisplays() {
 // called once per Calculate click (or facility/currency/module change), not on every goal
 // keystroke.
 
-let electricTradeoffRunId = 0;
-
-async function renderElectricTradeoffs(plan) {
-    const host = document.getElementById('electric-tradeoff-analysis');
-    if (!host) return;
-    if (!plan?.electric_enabled || !(plan.electric_units || []).length) {
-        host.innerHTML = '';
-        return;
-    }
-    const strategy = plan.electric_strategy || selectedElectricStrategy();
-    const candidates = strategy === 'raw'
-        ? ['Mine', 'Well']
-        : [...new Set((plan.electric_units || []).map(row => row[0]).filter(Boolean))];
-    if (!candidates.length) {
-        host.innerHTML = '';
-        return;
-    }
-    const runId = ++electricTradeoffRunId;
-    host.innerHTML = '<p class="hint small">正在比較各電力接入選擇……</p>';
-    try {
-        const input = lastPlanInput || getPlanInputValues();
-        const raw = await callWorker('electric_tradeoffs', JSON.stringify({ input, facilities: candidates }));
-        if (runId !== electricTradeoffRunId) return;
-        const rows = JSON.parse(raw || '[]');
-        const baseRate = Number(plan.rate_per_second || 0);
-        const baseDemand = Number(plan.electric_demand || 0);
-        const powerByFacility = {};
-        (plan.electric_units || []).forEach(([facility, , units, power]) => {
-            const u = Number(units || 0);
-            powerByFacility[facility] = (powerByFacility[facility] || 0) + (u ? Number(power || 0) / u : 0);
-        });
-        const cards = rows.map(r => {
-            const power = powerByFacility[r.facility] || 0;
-            if (!r.success || r.rate_per_second == null) {
-                return `<div class="electric-tradeoff-row"><strong>${prettyFacility(r.facility)}</strong><span class="hint small">無法完成反算</span></div>`;
-            }
-            const delta = Number(r.rate_per_second) - baseRate;
-            const pct = baseRate > 0 ? delta / baseRate * 100 : 0;
-            const sign = delta > 1e-12 ? '+' : '';
-            const newDemand = Number(r.electric_demand || 0);
-            const released = Math.max(0, baseDemand - newDemand);
-            return `<div class="electric-tradeoff-row">
-                <div><strong>${prettyFacility(r.facility)}</strong><span class="hint small">${formatNumber(Math.round(power))}W／單位</span></div>
-                <div><span class="summary-label">若完全不讓它接 E-MODE</span><strong>${sign}${formatNumber(Math.round(delta * 3600))} 家園幣／小時</strong> <span class="hint small">（${sign}${pct.toFixed(2)}%）</span></div>
-                <div class="hint small">釋出約 ${formatNumber(Math.round(released))}W，最佳化器會重新分配 E-MODE。</div>
-            </div>`;
-        }).join('');
-        host.innerHTML = `<details class="explain electric-tradeoff-box" open>
-            <summary>為什麼選這些 E-MODE？</summary>
-            <p class="hint small">這不是單純用「每瓦價值」排序。以下是把某一種設施完全禁止接電後，使用同一套最佳化條件重新求解的結果；因此可以直接看出「拿掉它」會讓最終家園幣／小時變多少。數值為負代表它目前值得保留。</p>
-            ${cards}
-        </details>`;
-    } catch (error) {
-        if (runId === electricTradeoffRunId) host.innerHTML = `<p class="hint small">電力取捨分析暫時無法完成：${error?.message || error}</p>`;
-    }
-}
-
 function renderElectricSummary(plan) {
     const card = document.getElementById('electric-result-card');
     const body = document.getElementById('electric-result');
@@ -4131,9 +4074,7 @@ function renderElectricSummary(plan) {
             <div><span class="summary-label">E-mode效率</span><strong>${pct}%</strong></div>
             <div><span class="summary-label">Powered設施單位</span><strong>${powered}</strong></div>
         </div>
-        ${rows ? `<details class="explain"><summary>查看 E-mode 分配</summary><div class="table-wrapper"><table class="facility-plan-table"><thead><tr><th>設施</th><th>配方</th><th>數量</th><th>耗電</th></tr></thead><tbody>${rows}</tbody></table></div></details>` : '<p class="hint small">目前最佳方案沒有使用可確認耗電需求的 E-mode 設施。</p>'}
-        <div id="electric-tradeoff-analysis"></div>`;
-    renderElectricTradeoffs(plan);
+        ${rows ? `<div class="table-wrapper"><table class="facility-plan-table"><thead><tr><th>設施</th><th>配方</th><th>數量</th><th>耗電</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="hint small">目前最佳方案沒有使用可確認耗電需求的 E-mode 設施。</p>'}`;
 }
 
 function displayPlan(plan) {
