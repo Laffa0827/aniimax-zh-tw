@@ -364,7 +364,7 @@ function getPersistedFieldIds() {
         'ecological-module-level', 'kitchen-module-level',
         'resource-detector-level', 'crafting-module-level',
         'rate-unit', 'season-on', 'layout-sim-on',
-        'electric-enabled', 'electric-generator-level',
+        'electric-enabled', 'electric-generator-level', 'electric-strategy-raw', 'electric-strategy-workstations', 'electric-strategy-combined',
         'aniimo-best', 'aniimo-minimum', 'aniimo-custom'
     ];
 }
@@ -1357,17 +1357,79 @@ function layoutHomeLevel() {
     return isSimpleMode() ? selectedHomeLevel() : homeLevelCovering(lastPlanInput);
 }
 
-function attachLayoutHandlers() {
-    document.getElementById('layout-whole').addEventListener('change', (e) => {
-        layoutShowsWhole = e.target.checked;
-        if (lastLayout) drawLayout(lastLayout);
+function attachElectricLayoutHandlers() {
+    document.querySelectorAll('input[name="electric-strategy"]').forEach(input => input.addEventListener('change', () => {
+        renderElectricSettings();
+        if (lastPlan?.success) renderElectricLayout(lastPlan);
+    }));
+}
+
+function electricStrategyLabel(strategy) {
+    return ({
+        raw: '只接入原料生產（礦山／水井）',
+        workstations: '只接入作業台',
+        combined: '綜合',
+    })[strategy] || '綜合';
+}
+
+// A compact, human-readable power placement guide. It is intentionally separate from the
+// full homeland layout: the optimizer decides WHAT is powered, while this diagram explains
+// WHERE to place the generator/poles and the powered facilities around them.
+function renderElectricLayout(plan) {
+    const card = document.getElementById('electric-layout-card');
+    const body = document.getElementById('electric-layout');
+    if (!card || !body) return;
+    if (!plan?.success || !plan.electric_enabled) {
+        card.style.display = 'none';
+        body.innerHTML = '';
+        return;
+    }
+    const powered = (plan.electric_units || []).reduce((sum, row) => sum + Number(row[2] || 0), 0);
+    if (!powered) {
+        card.style.display = 'block';
+        body.innerHTML = '<p class="hint">目前方案沒有需要接入 E-MODE 的設施。</p>';
+        return;
+    }
+    card.style.display = 'block';
+    const strategy = plan.electric_strategy || selectedElectricStrategy();
+    const generator = Number(plan.electric_generator_level || 1);
+    const poles = Math.max(0, Math.min(6, Math.ceil(Math.max(0, powered - 4) / 4)));
+    const rows = 13, cols = 13;
+    const cells = Array.from({length: rows * cols}, () => ({ label: '', cls: '' }));
+    const at = (r,c,label,cls) => { if(r>=0&&r<rows&&c>=0&&c<cols) cells[r*cols+c]={label,cls}; };
+    const centerR=6, centerC=6;
+    at(centerR, centerC, '發電機', 'generator');
+    const polePos = [[2,6],[6,2],[6,10],[10,6],[3,3],[9,9]];
+    polePos.slice(0,poles).forEach((p,i)=>at(p[0],p[1],`樁${i+1}`, 'pole'));
+    const facilityRows = (plan.electric_units || []).map(([facility,item,units,power]) => ({facility,item,units:Number(units||0),power:Number(power||0)}));
+    let slot = 0;
+    const positions = [[4,4],[4,8],[8,4],[8,8],[3,6],[6,3],[6,9],[9,6],[2,4],[4,2],[2,8],[8,2],[10,4],[4,10],[10,8],[8,10]];
+    facilityRows.forEach(row=>{
+        for(let n=0;n<row.units;n++){
+            const pos=positions[slot++ % positions.length];
+            at(pos[0],pos[1],prettyFacility(row.facility), 'powered');
+        }
     });
-    document.getElementById('layout-sim-on').addEventListener('change', () => {
-        if (lastLayout) drawLayout(lastLayout);
-    });
-    document.getElementById('layout-replay').addEventListener('click', () => {
-        if (layoutSim) resetLayoutSim(layoutSim);
-    });
+    const grid = cells.map((c,i)=>`<div class="electric-layout-cell ${c.cls}">${c.label || ''}</div>`).join('');
+    const legend = facilityRows.map(r=>`<div><span class="electric-layout-dot powered"></span>${prettyFacility(r.facility)} × ${r.units} <span class="hint small">${formatNumber(Math.round(r.power))}W</span></div>`).join('');
+    const demand=Math.round(Number(plan.electric_demand||0)), threshold=Math.round(Number(plan.electric_boost_threshold||0)), capacity=Math.round(Number(plan.electric_generator_capacity||0));
+    body.innerHTML = `
+      <div class="electric-layout-head">
+        <strong>建議的電力配置</strong>
+        <span class="hint small">${electricStrategyLabel(strategy)} · 僅顯示 120% E-MODE 配置</span>
+      </div>
+      <div class="electric-layout-wrap">
+        <div class="electric-grid" style="--electric-cols:${cols};">${grid}</div>
+        <div class="electric-layout-notes">
+          <div><strong>發電機 Lv.${generator}</strong>：置於配置中心。</div>
+          <div><strong>發電樁 × ${poles}</strong>：用於延伸電力網；樁與發電機／其他樁請保持至少 1 小格距離。</div>
+          <div><strong>電網需求</strong>：${demand} / ${capacity}W。</div>
+          <div><strong>120% 門檻</strong>：${threshold}W；目前方案 ${demand <= threshold ? '符合' : '不符合'}。</div>
+          <div class="electric-layout-legend">${legend}</div>
+        </div>
+      </div>
+      <p class="hint small electric-layout-footnote">這是電力設施擺放示意圖，不會替你重新排列整個家園；請以方格內的設施名稱作為相對位置參考。</p>`;
+    setStep('electric-layout','done');
 }
 
 function drawLayout(drawn) {
@@ -1789,7 +1851,7 @@ function startProgress(input, runId) {
     const steps = [
         ...priorities.map(target => ({ key: `priority:${target}`, label: `最多${priorityLabel(target, planContext.aniipod)}` })),
         { key: 'plan', label: levelUp ? '最快升級' : priorities.length ? '剩餘時間賺取最多家園幣' : '最多家園幣' },
-        { key: 'layout', label: '家園配置圖' },
+        { key: 'electric-layout', label: '電力設施配置' },
         { key: 'improve', label: '提升機會' },
         { key: 'minimum', label: '最低需求隊伍' },
     ];
@@ -1816,7 +1878,8 @@ function setStep(key, state, detail, proven) {
     let step = progress.steps.find(s => s.key === key);
     if (!step && key === 'backup') {
         step = { key, label: '備用最佳化器', state: 'pending' };
-        progress.steps.splice(progress.steps.findIndex(s => s.key === 'layout'), 0, step);
+        const insertAt = progress.steps.findIndex(s => s.key === 'electric-layout');
+        progress.steps.splice(insertAt < 0 ? progress.steps.length : insertAt, 0, step);
     }
     if (!step) return;
     const now = performance.now();
@@ -2759,6 +2822,11 @@ function renderProfitBreakdown(plan) {
         </div>`;
 }
 
+function selectedElectricStrategy() {
+    const selected = document.querySelector('input[name="electric-strategy"]:checked');
+    return selected?.value || 'combined';
+}
+
 function selectedGeneratorLevel() {
     const selected = document.getElementById('electric-generator-level')?.value || 'auto';
     if (selected === 'auto') {
@@ -2785,10 +2853,12 @@ function renderElectricSettings() {
     if (panel) panel.hidden = false;
     level.disabled = !toggle.checked;
     const effective = selectedGeneratorLevel();
+    const strategy = selectedElectricStrategy();
+    const labels = { raw: '只接入原料生產（礦山／水井）', workstations: '只接入作業台', combined: '綜合' };
     const hint = document.getElementById('electric-generator-hint');
     if (hint) hint.textContent = toggle.checked
-        ? `RV12 起開放電力系統；目前使用 ${generatorLabel(effective)}。電網中的 E-mode 設施共用同一台 Crackle Generator。`
-        : '電力系統已開放，但目前關閉 E-mode；計算器將依原 Aniimax 邏輯運算。';
+        ? `RV12 起開放電力系統；目前使用 ${generatorLabel(effective)}。策略：${labels[strategy] || labels.combined}。計算器只接受 120% E-MODE 方案。`
+        : '電力系統已開放，但目前關閉 E-MODE；計算器將依原 Aniimax 邏輯運算。';
 }
 
 // Get plan-level input values from the form (facilities/modules/prioritize-byproducts, nothing
@@ -2811,7 +2881,8 @@ function getPlanInputValues() {
             modules,
             home_level: selectedHomeLevel(),
             electric_enabled: electricSystemAvailable() && (document.getElementById('electric-enabled')?.checked ?? false),
-            generator_level: selectedGeneratorLevel()
+            generator_level: selectedGeneratorLevel(),
+            electric_strategy: selectedElectricStrategy()
         };
     }
 
@@ -2841,7 +2912,8 @@ function getPlanInputValues() {
         modules,
         home_level: selectedHomeLevel(),
         electric_enabled: electricSystemAvailable() && (document.getElementById('electric-enabled')?.checked ?? false),
-        generator_level: selectedGeneratorLevel()
+        generator_level: selectedGeneratorLevel(),
+        electric_strategy: selectedElectricStrategy()
     };
 }
 
@@ -3975,11 +4047,13 @@ function renderElectricSummary(plan) {
     const efficiency = Number(plan.electric_efficiency || 1);
     const pct = Math.round(efficiency * 100);
     const powered = (plan.electric_units || []).reduce((sum, row) => sum + Number(row[2] || 0), 0);
+    const strategy = electricStrategyLabel(plan.electric_strategy || selectedElectricStrategy());
     const rows = (plan.electric_units || []).map(([facility, item, units, power]) => `
         <tr><td>${prettyFacility(facility)}</td><td>${prettyItem(item)}</td><td>${units}</td><td>${formatNumber(Math.round(power))}W</td></tr>`).join('');
     body.innerHTML = `
         <div class="electric-summary-grid">
             <div><span class="summary-label">Generator</span><strong>Lv.${plan.electric_generator_level}</strong></div>
+            <div><span class="summary-label">接入策略</span><strong>${strategy}</strong></div>
             <div><span class="summary-label">電網需求</span><strong>${formatNumber(Math.round(demand))} / ${formatNumber(Math.round(capacity))}W</strong></div>
             <div><span class="summary-label">120%門檻</span><strong>${formatNumber(Math.round(threshold))}W</strong></div>
             <div><span class="summary-label">E-mode效率</span><strong>${pct}%</strong></div>
@@ -4015,7 +4089,7 @@ function displayPlan(plan) {
 
     updateRateDisplay(!rateUnitChosen);
     renderGoalTargets(plan);
-    renderHomelandLayout(plan);
+    renderElectricLayout(plan);
 
     // Said only when the plan might not be the best: the solver ran out of time, or the backup
     // planner made it.
@@ -4489,7 +4563,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderSpecialRecipes();
     attachSeasonHandlers();
     attachRosterHandlers();
-    attachLayoutHandlers();
+    attachElectricLayoutHandlers();
     attachPriorityHandlers();
     showAniimoSetup();
     applyConfigMode();

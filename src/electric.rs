@@ -9,11 +9,13 @@ pub struct ElectricConfig {
     pub enabled: bool,
     /// Crackle Generator level (1..=5).
     pub generator_level: u8,
+    /// 0 = combined, 1 = raw materials (Mine/Well), 2 = workstations/processing.
+    pub strategy: u8,
 }
 
 impl Default for ElectricConfig {
     fn default() -> Self {
-        Self { enabled: false, generator_level: 1 }
+        Self { enabled: false, generator_level: 1, strategy: 0 }
     }
 }
 
@@ -21,7 +23,19 @@ impl ElectricConfig {
     pub fn disabled() -> Self { Self::default() }
 
     pub fn new(generator_level: u8) -> Self {
-        Self { enabled: true, generator_level: generator_level.clamp(1, 5) }
+        Self::new_with_strategy(generator_level, 0)
+    }
+
+    pub fn new_with_strategy(generator_level: u8, strategy: u8) -> Self {
+        Self { enabled: true, generator_level: generator_level.clamp(1, 5), strategy: strategy.min(2) }
+    }
+
+    pub fn allows_facility(self, facility: &str) -> bool {
+        match self.strategy {
+            1 => matches!(facility, "Mine" | "Well"),
+            2 => !matches!(facility, "Mine" | "Well"),
+            _ => true,
+        }
     }
 
     /// Decoded generator capacity: 600 / 800 / 1000 / 1200 / 1500.
@@ -70,6 +84,8 @@ pub fn electric_compatible(facility: &str) -> bool {
 }
 
 /// Per-facility power model.
+/// The level passed to `electric_require` must be the actual owned facility level,
+/// not the production recipe's minimum unlock level.
 ///
 /// `base_power` is the facility's own Lv.1 starting demand. `power_per_level` is the fixed
 /// increase for each additional facility level. This deliberately does not assume that every

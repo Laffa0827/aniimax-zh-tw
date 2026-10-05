@@ -693,6 +693,18 @@ fn default_true() -> bool {
     true
 }
 
+fn default_electric_strategy() -> String {
+    "combined".to_string()
+}
+
+fn electric_strategy_id(strategy: &str) -> u8 {
+    match strategy {
+        "raw" => 1,
+        "workstations" => 2,
+        _ => 0,
+    }
+}
+
 fn default_generator_level() -> u8 {
     1
 }
@@ -767,6 +779,9 @@ pub struct JsPlanInput {
     /// Crackle Generator level. RV12-13=1, RV14-15=2, RV16-17=3, RV18-19=4, RV20+=5.
     #[serde(default = "default_generator_level")]
     pub generator_level: u8,
+    /// `raw` = Mine/Well only, `workstations` = processing facilities only, `combined` = both.
+    #[serde(default = "default_electric_strategy")]
+    pub electric_strategy: String,
 }
 
 /// The player's Aniimo, and what the page knows of the facilities they work (see
@@ -817,7 +832,7 @@ impl JsRoster {
 impl JsPlanInput {
     fn electric_config(&self) -> Option<ElectricConfig> {
         (self.electric_enabled && self.home_level >= 12)
-            .then(|| ElectricConfig::new(self.generator_level))
+            .then(|| ElectricConfig::new_with_strategy(self.generator_level, electric_strategy_id(&self.electric_strategy)))
     }
 
     /// Builds a [`FacilityCounts`] from the `facilities` map.
@@ -1242,6 +1257,8 @@ pub struct JsProductionPlan {
     #[serde(default)]
     pub electric_generator_level: u8,
     #[serde(default)]
+    pub electric_strategy: String,
+    #[serde(default)]
     pub electric_generator_capacity: f64,
     #[serde(default)]
     pub electric_boost_threshold: f64,
@@ -1316,6 +1333,7 @@ fn empty_production_plan(success: bool, error: Option<String>) -> JsProductionPl
         staffing: Vec::new(),
         electric_enabled: false,
         electric_generator_level: 0,
+        electric_strategy: "combined".to_string(),
         electric_generator_capacity: 0.0,
         electric_boost_threshold: 0.0,
         electric_demand: 0.0,
@@ -1572,12 +1590,13 @@ pub fn exact_plan(input_json: &str, stage_json: &str, solution_json: &str) -> St
     if let Some(power) = prepared.input.electric_config() {
         let electric_units: Vec<(String, String, u32, f64)> = exact.electric_units.iter().filter_map(|(name, &units)| {
             let item = prepared.items.iter().find(|i| i.name == *name)?;
-            let require = electric_require(&item.facility, item.facility_level)?;
+            let require = electric_require(&item.facility, prepared.facility_counts.get_level(&item.facility))?;
             Some((item.facility.clone(), item.name.clone(), units, units as f64 * require))
         }).collect();
         let demand: f64 = electric_units.iter().map(|(_, _, _, p)| *p).sum();
         js.electric_enabled = true;
         js.electric_generator_level = power.generator_level;
+        js.electric_strategy = prepared.input.electric_strategy.clone();
         js.electric_generator_capacity = power.capacity();
         js.electric_boost_threshold = power.boost_threshold();
         js.electric_demand = demand;

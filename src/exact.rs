@@ -354,10 +354,14 @@ fn build_model<'a>(
         let max = facility_counts.get_count(&recipe.facility) as f64;
         let units = model.add(0.0, (0.0, max), !takes_turns(recipe), VarKind::Units(recipe));
 
+        // E-mode power is based on the actual owned facility level, not the recipe unlock level.
+        // Example: a Lv.4 Well running Quick Fresh Water is still a Lv.4 Well, so it consumes
+        // the same 120W as a Lv.4 Mine; recipe.facility_level (3 for Quick Fresh Water) is only
+        // the minimum level required to unlock that recipe.
         // E-mode is a shared-grid decision. Powered units may use the full generator capacity;
         // only the subset inside the boost threshold receives the extra 20% throughput.
-        if electric.filter(|p| p.enabled && !takes_turns(recipe)).is_some() {
-            if electric_compatible(&recipe.facility) && electric_require(&recipe.facility, recipe.facility_level).is_some() {
+        if electric.filter(|p| p.enabled && p.allows_facility(&recipe.facility) && !takes_turns(recipe)).is_some() {
+            if electric_compatible(&recipe.facility) && electric_require(&recipe.facility, facility_counts.get_level(&recipe.facility)).is_some() {
                 let powered = model.add(0.0, (0.0, max), true, VarKind::ElectricUnits(recipe));
                 let boosted = model.add(0.0, (0.0, max), true, VarKind::ElectricBoostUnits(recipe));
                 electric_vars.insert(recipe.name.clone(), (powered, boosted));
@@ -494,7 +498,7 @@ fn build_model<'a>(
                 VarKind::ElectricUnits(recipe) => *recipe,
                 _ => continue,
             };
-            if let Some(require) = electric_require(&recipe.facility, recipe.facility_level) {
+            if let Some(require) = electric_require(&recipe.facility, facility_counts.get_level(&recipe.facility)) {
                 demand_terms.push((v, require));
                 if let Some((boost_v, _)) = model.kinds.iter().enumerate().find(|(_, k)| matches!(k, VarKind::ElectricBoostUnits(r) if r.name == recipe.name)) {
                     boost_terms.push((boost_v, require));
@@ -509,12 +513,10 @@ fn build_model<'a>(
             // powered units receive 120%; otherwise ALL powered units run at 100%.
             model.constrain(demand_terms.clone(), ComparisonOp::Le, power.capacity());
 
-            // grid_boost = 1 means the complete powered grid must fit inside the 120% threshold.
-            // If grid_boost = 0, the threshold is relaxed by a big-M term.
-            let big_m = power.capacity();
-            let mut threshold_terms = demand_terms.clone();
-            threshold_terms.push((grid_boost, big_m));
-            model.constrain(threshold_terms, ComparisonOp::Le, power.boost_threshold() + big_m);
+            // This calculator deliberately guarantees the 120% E-mode band.
+            // A strategy is never allowed to fall back to 100% efficiency.
+            model.constrain(vec![(grid_boost, 1.0)], ComparisonOp::Eq, 1.0);
+            model.constrain(demand_terms.clone(), ComparisonOp::Le, power.boost_threshold());
 
             // When boost is ON, boosted == powered for every recipe. When boost is OFF,
             // boosted == 0. This prevents a mixed 120%/100% grid.
@@ -1227,7 +1229,7 @@ pub fn check_plan_with_power(
     if let Some(power) = electric.filter(|p| p.enabled) {
         let demand: f64 = plan.electric_units.iter().filter_map(|(name, &units)| {
             let recipe = all.get(name.as_str())?;
-            Some(units as f64 * electric_require(&recipe.facility, recipe.facility_level)?)
+            Some(units as f64 * electric_require(&recipe.facility, facility_counts.get_level(&recipe.facility))?)
         }).sum();
         if demand > power.capacity() + TOLERANCE {
             return Err(format!("Crackle E-mode demand {demand:.3} exceeds generator capacity {}", power.capacity()));

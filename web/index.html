@@ -174,6 +174,15 @@
                                 </select>
                             </div>
                         </div>
+                        <div class="electric-strategy">
+                            <h4>電力接入策略</h4>
+                            <div class="tabs electric-strategy-tabs" role="radiogroup" aria-label="電力接入策略">
+                                <label><input type="radio" name="electric-strategy" id="electric-strategy-raw" value="raw"> 只接入原料生產（礦山／水井）</label>
+                                <label><input type="radio" name="electric-strategy" id="electric-strategy-workstations" value="workstations"> 只接入作業台</label>
+                                <label><input type="radio" name="electric-strategy" id="electric-strategy-combined" value="combined" checked> 綜合</label>
+                            </div>
+                            <p class="hint small">三者互斥；無論選哪一種，最佳化器都會保證整個電網維持 120% E-MODE 效率。</p>
+                        </div>
                         <p class="hint small" id="electric-generator-hint"></p>
                     </div>
                 </div>
@@ -317,21 +326,10 @@
                         <div id="facility-plan-container" class="facilities-container"></div>
                     </div>
 
-                    <div class="card production-steps" id="layout-card" style="display: none;">
-                        <h2>家園配置圖</h2>
-                        <p class="hint" id="layout-summary"></p>
-                        <details class="explain">
-                            <summary>配置方式</summary>
-                            <p>每批完成的商品都會搬到儲存箱（SU），因此設施會依「每小時搬運次數 × 到儲存箱的直線距離」配置：最忙碌的設施靠近儲存箱，閒置設施放在外圍。環境設施的作物會放在其覆蓋範圍內，並盡量安排在靠近儲存箱的一側。所有設施都會維持在 RV 可開放的土地範圍內；配置圖也會以加速的遊戲時間模擬生產與搬運。這是逐步求出的緊密配置，不保證是數學上的最短距離配置。</p>
-                        </details>
-                        <div class="layout-controls">
-                            <span class="layout-toggles">
-                                <label class="layout-whole"><input type="checkbox" id="layout-whole"> 顯示完整家園</label>
-                                <label class="layout-whole"><input type="checkbox" id="layout-sim-on" checked> Simulate</label>
-                            </span>
-                            <span class="layout-sim" id="layout-sim" hidden><span id="layout-clock">0 小時 00 分鐘</span><button type="button" class="toggle-button small" id="layout-replay">重新播放</button></span>
-                        </div>
-                        <div class="layout-diagram" id="layout-diagram"></div>
+                    <div class="card production-steps" id="electric-layout-card" style="display: none;">
+                        <h2>電力設施配置</h2>
+                        <p class="hint">只說明發電機、發電樁與 E-MODE 設施的相對擺放方式，不再規劃整個家園。</p>
+                        <div id="electric-layout"></div>
                     </div>
 
                     <div class="card production-steps" id="goal-section">
@@ -513,7 +511,7 @@
                     <li><strong>商品產出明細</strong>：在升級模式下，顯示各商品每小時收益，以及到升級完成前的總收益。</li>
                     <li><strong>各設施生產方案</strong>：告訴你每座設施應該設定什麼生產內容。標示「未確認」的配方代表尚未在遊戲中驗證。</li>
                     <li><strong>提升機會</strong>：列出你目前能做到、且最值得升級或解鎖的項目。</li>
-                    <li><strong>家園配置圖</strong>：顯示設施應該放在哪裡，並將忙碌的設施盡量靠近儲存箱。</li>
+                    <li><strong>電力設施配置</strong>：依目前 E-MODE 策略顯示發電機、發電樁與接電設施的相對擺放方式。</li>
                     <li><strong>達成目標</strong>：顯示達到指定家園幣或優先目標所需的時間，以及屆時會額外取得的物品。</li>
                 </ul>
             </div>
