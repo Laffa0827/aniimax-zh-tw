@@ -4131,7 +4131,7 @@ function renderElectricSummary(plan) {
             <div><span class="summary-label">E-mode效率</span><strong>${pct}%</strong></div>
             <div><span class="summary-label">Powered設施單位</span><strong>${powered}</strong></div>
         </div>
-        ${rows ? `<details class="explain"><summary>查看 E-mode 分配</summary><div class="table-wrapper"><table class="facility-plan-table"><thead><tr><th>設施</th><th>配方</th><th>數量</th><th>耗電</th></tr></thead><tbody>${rows}</tbody></table></div></details>` : '<p class="hint small">目前最佳方案沒有使用可確認耗電需求的 E-mode 設施。</p>'}`
+        ${rows ? `<details class="explain"><summary>查看 E-mode 分配</summary><div class="table-wrapper"><table class="facility-plan-table"><thead><tr><th>設施</th><th>配方</th><th>數量</th><th>耗電</th></tr></thead><tbody>${rows}</tbody></table></div></details>` : '<p class="hint small">目前最佳方案沒有使用可確認耗電需求的 E-mode 設施。</p>'}
         <div id="electric-tradeoff-analysis"></div>`;
     renderElectricTradeoffs(plan);
 }
