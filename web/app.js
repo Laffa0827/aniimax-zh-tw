@@ -4,9 +4,13 @@ import {
     FACILITIES, FACILITY_CATEGORIES, FACILITY_CATEGORY_BY_NAME, FACILITY_FOOTPRINTS, HOMELAND_PLOTS, HOMELAND_PLOT_SIZE,
     MAX_HOME_LEVEL, ANIIMO_MAX, simpleSetup,
     LEVEL_UP_COSTS, LEVEL_UP_CHAINS, SPECIAL_RECIPES, SEASON, ANIIPOD_TIERS, PERSONALITY_PAIRS, personalityLetter, opposedPersonality,
-} from './facility-config.js?v=20261005-13';
+} from './facility-config.js?v=20261011-1';
 import { createShareUrl, readShareHash, urlWithoutShare } from './share-config.js?v=20261005-13';
-import { generatorLevelForRv, generatorLabel, relayPoleCapForRv } from './electric-config.js?v=20261005-14';
+import {
+    generatorLevelForRv, generatorCountForRv, generatorLabel, relayPoleCapForRv, electricRequire, electricCompatible,
+    normalizeElectricStrategy, ELECTRIC_STRATEGY_LABEL,
+    ELECTRIC_ALLOCATION_MANUAL, MANUAL_BEST, normalizeManualChoice, manualUnitCap, electricAllocationInput, migrateElectricAllocation,
+} from './electric-config.js?v=20261011-4';
 import { zhFacility, zhCategory, zhAbility, zhAbilityAbout, zhPersonality, zhEnvironment, zhJob, zhItem, zhTooltip, ZH_TW } from './i18n-zh-TW.js?v=20261005-13';
 
 let wasmReady = false;
@@ -364,7 +368,10 @@ function getPersistedFieldIds() {
         'ecological-module-level', 'kitchen-module-level',
         'resource-detector-level', 'crafting-module-level',
         'rate-unit', 'season-on', 'layout-sim-on',
-        'electric-enabled', 'electric-generator-level', 'electric-strategy-raw', 'electric-strategy-workstations', 'electric-strategy-combined',
+        'electric-enabled', 'electric-generator-level',
+        'electric-aniipod-maker', 'electric-dance-pad-polisher',
+        'electric-allocation-auto', 'electric-allocation-manual',
+        'electric-mine-allowed', 'electric-mine-units', 'electric-well-allowed', 'electric-well-units',
         'aniimo-best', 'aniimo-minimum', 'aniimo-custom'
     ];
 }
@@ -397,6 +404,7 @@ function migrateSavedConfig(data) {
     if (data['resource-detector-level'] === undefined && data['mineral-detector-level'] !== undefined) {
         data['resource-detector-level'] = data['mineral-detector-level'];
     }
+    migrateElectricAllocation(data);
     return data;
 }
 
@@ -511,6 +519,11 @@ function loadInputsFromStorage(data) {
         } else {
             el.value = data[id];
         }
+    });
+    // The Mine/Well count lists are filled in by `renderElectricAllocation`, which picks these up.
+    ['electric-mine-units', 'electric-well-units'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && id in data) el.dataset.wanted = data[id];
     });
     // E-mode is available from RV12. The calculator remains usable for every RV level; electricity is only
     // activated once the selected RV reaches the in-game unlock level. Existing saved configs keep
@@ -1357,21 +1370,6 @@ function layoutHomeLevel() {
     return isSimpleMode() ? selectedHomeLevel() : homeLevelCovering(lastPlanInput);
 }
 
-function attachElectricLayoutHandlers() {
-    document.querySelectorAll('input[name="electric-strategy"]').forEach(input => input.addEventListener('change', () => {
-        renderElectricSettings();
-        if (lastPlan?.success) renderElectricLayout(lastPlan);
-    }));
-}
-
-function electricStrategyLabel(strategy) {
-    return ({
-        raw: '只接入原料生產（礦山／水井）',
-        workstations: '只接入作業台',
-        combined: '綜合',
-    })[strategy] || '綜合';
-}
-
 // A compact, human-readable power placement guide. It is intentionally separate from the
 // full homeland layout: the optimizer decides WHAT is powered, while this diagram explains
 // WHERE to place the generator/poles and the powered facilities around them.
@@ -1391,7 +1389,6 @@ function renderElectricLayout(plan) {
         return;
     }
     card.style.display = 'block';
-    const strategy = plan.electric_strategy || selectedElectricStrategy();
     const generator = Number(plan.electric_generator_level || 1);
     // Relay-pole hard cap is determined by Home/RV level, NOT Generator level.
     // Verified from the in-game custom-settings screens: RV12-13=6, RV14-15=12,
@@ -1429,7 +1426,7 @@ function renderElectricLayout(plan) {
     body.innerHTML = `
       <div class="electric-layout-head">
         <strong>建議的電力配置</strong>
-        <span class="hint small">${electricStrategyLabel(strategy)} · 只顯示實際接電設施 · 120% E-MODE</span>
+        <span class="hint small">${ELECTRIC_STRATEGY_LABEL} · 只顯示實際接電設施 · 120% E-MODE</span>
       </div>
       <div class="electric-layout-wrap">
         <div class="electric-grid" style="--electric-cols:${cols};">${grid}</div>
@@ -2021,12 +2018,16 @@ function renderRoster() {
 
 // When the roster can't make a plan: keeps the Aniimo card, and its editor, on screen so the
 // player can add to it.
-function showRosterShortfall() {
+function showRosterShortfall(reason) {
     document.getElementById('error-message').style.display = 'none';
     showSetupOnly();
     const anyAble = roster.some(a => a.count > 0 && Object.keys(a.abilities).length);
-    // An empty roster's editor already says to add some.
-    document.getElementById('aniimo-collapsed-summary').textContent = anyAble ? '找不到符合目前 Aniimo 配置的方案。' : '';
+    // An empty roster's editor already says to add some. Otherwise the planner's own reason
+    // (e.g. E-mode on with no Lightning Aniimo to staff the Crackle Generator) is shown with it.
+    const shortfall = '找不到符合目前 Aniimo 配置的方案。';
+    document.getElementById('aniimo-collapsed-summary').textContent = reason
+        ? `${shortfall}原因：${reason}`
+        : anyAble ? shortfall : '';
 }
 
 // Of the results, only the Aniimo card, emptied of the last plan's team: its setup may be what
@@ -2205,11 +2206,21 @@ function seasonActive() {
 function renderSeason() {
     document.getElementById('season-section').hidden = !seasonAvailable();
     document.getElementById('season-config').hidden = !seasonActive();
-    document.getElementById('season-notes').innerHTML = SEASON.recipeNotes.map(r => `
+    // The festival's two processing candidates are always in the plan's reach while it's on, and
+    // it takes whichever earns more (see `SEASON.candidates`): shown ticked, not for unticking.
+    // The other Recipe Notes are the player's to tick.
+    document.getElementById('season-notes').innerHTML = [
+        ...SEASON.candidates.map(r => `
+        <label class="special-option" title="活動期間自動納入，依實際收益與原料供應在兩者中擇優">
+            <input type="checkbox" checked disabled>
+            <span>${prettyItem(r.name)}（自動比較）</span>
+        </label>`),
+        ...SEASON.recipeNotes.map(r => `
         <label class="special-option">
             <input type="checkbox" data-special="${r.name}"${unlockedSpecial.has(r.name) ? ' checked' : ''}>
             <span>${prettyItem(r.name)}</span>
-        </label>`).join('');
+        </label>`),
+    ].join('');
 }
 
 function attachSeasonHandlers() {
@@ -2247,7 +2258,7 @@ function recipeLabel(recipe) {
 async function loadRecipeIndex() {
     try {
         recipeIndex = JSON.parse(await callWorker('get_all_items'))
-            .map(r => ({ name: r.name, facility: r.facility, cost: r.cost || 0, seasonSeedCost: r.season_seed_cost || 0, environment: r.environment || null, jobs: r.jobs || [], ingredients: r.raw_materials || [], amounts: r.required_amount || [], yieldAmount: r.yield_amount || 1, byproduct: r.byproduct_item || null, byproductAmount: r.byproduct?.[1] || 0, turns: r.sell_currency === 'none' }))
+            .map(r => ({ name: r.name, facility: r.facility, cost: r.cost || 0, seasonSeedCost: r.season_seed_cost || 0, environment: r.environment || null, jobs: r.jobs || [], ingredients: r.raw_materials || [], amounts: r.required_amount || [], yieldAmount: r.yield_amount || 1, byproduct: r.byproduct_item || null, byproductAmount: r.byproduct?.[1] || 0, turns: false }))
             .sort((a, b) => a.facility.localeCompare(b.facility) || a.name.localeCompare(b.name));
         document.getElementById('skip-options').innerHTML =
             recipeIndex.map(r => `<option value="${recipeLabel(r)}"></option>`).join('');
@@ -2834,18 +2845,25 @@ function renderProfitBreakdown(plan) {
         </div>`;
 }
 
+// The E-mode strategy sent to the planner: always combined, whatever an older saved setup says.
 function selectedElectricStrategy() {
-    const selected = document.querySelector('input[name="electric-strategy"]:checked');
-    return selected?.value || 'combined';
+    return normalizeElectricStrategy();
+}
+
+// The RV level the generators follow: the one picked in Simple mode, else the fill level.
+function generatorRv() {
+    return isSimpleMode() ? selectedHomeLevel() : numberOrDefault(document.getElementById('fill-level')?.value, selectedHomeLevel());
 }
 
 function selectedGeneratorLevel() {
     const selected = document.getElementById('electric-generator-level')?.value || 'auto';
-    if (selected === 'auto') {
-        const rv = isSimpleMode() ? selectedHomeLevel() : numberOrDefault(document.getElementById('fill-level')?.value, selectedHomeLevel());
-        return generatorLevelForRv(rv);
-    }
+    if (selected === 'auto') return generatorLevelForRv(generatorRv());
     return Math.max(1, Math.min(5, numberOrDefault(selected, 1)));
+}
+
+// How many generators feed the grid at that RV level (see `generatorCountForRv`).
+function selectedGeneratorCount() {
+    return generatorCountForRv(generatorRv());
 }
 
 function renderElectricSettings() {
@@ -2859,18 +2877,85 @@ function renderElectricSettings() {
         toggle.disabled = true;
         level.disabled = true;
         if (panel) panel.hidden = true;
+        renderElectricAllocation();
         return;
     }
     toggle.disabled = false;
     if (panel) panel.hidden = false;
     level.disabled = !toggle.checked;
+    // The two special facilities' own E-mode switches only matter with E-mode on.
+    ['electric-aniipod-maker', 'electric-dance-pad-polisher'].forEach(id => {
+        const box = document.getElementById(id);
+        if (box) box.disabled = !toggle.checked;
+    });
     const effective = selectedGeneratorLevel();
-    const strategy = selectedElectricStrategy();
-    const labels = { raw: '只接入原料生產（礦山／水井）', workstations: '只接入作業台', combined: '綜合' };
     const hint = document.getElementById('electric-generator-hint');
     if (hint) hint.textContent = toggle.checked
-        ? `RV12 起開放電力系統；目前使用 ${generatorLabel(effective)}。策略：${labels[strategy] || labels.combined}。計算器只接受 120% E-MODE 方案。`
+        ? `RV12 起開放電力系統；目前使用 ${generatorLabel(effective, selectedGeneratorCount())}。策略：${ELECTRIC_STRATEGY_LABEL}。計算器先達成目前目標（最高收益或最快升級），再在不影響目標下讓最多設施接電、耗電最接近上限。`
         : '電力系統已開放，但目前關閉 E-MODE；計算器將依原 Aniimax 邏輯運算。';
+    renderElectricAllocation();
+}
+
+function selectedElectricAllocation() {
+    return document.getElementById('electric-allocation-manual')?.checked ? ELECTRIC_ALLOCATION_MANUAL : 'auto';
+}
+
+// The owned tiers of `facility` the plan is for: Simple mode's RV setup, or the entered ones.
+function ownedTiers(facility) {
+    return (isSimpleMode() ? simpleSetup(selectedHomeLevel()).facilities[facility] : facilityTiers[facility]) || [];
+}
+
+// E-mode's Mine/Well allocation. Auto: the planner shares out every facility's power. Manual: a
+// switch per facility, and once ticked, "最佳" (the planner decides, the default) or a count from 1
+// up to what's owned and fits the grid on its own (`manualUnitCap`), which the planner keeps
+// exactly or says why it can't.
+function renderElectricAllocation() {
+    const box = document.getElementById('electric-manual-config');
+    if (!box) return;
+    const on = electricSystemAvailable() && (document.getElementById('electric-enabled')?.checked ?? false);
+    const manual = selectedElectricAllocation() === ELECTRIC_ALLOCATION_MANUAL;
+    ['electric-allocation-auto', 'electric-allocation-manual'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !on;
+    });
+    box.hidden = !manual;
+    const caps = [];
+    for (const [facility, key, shown] of [['Mine', 'mine', '礦山'], ['Well', 'well', '水井']]) {
+        const allowed = document.getElementById(`electric-${key}-allowed`);
+        const select = document.getElementById(`electric-${key}-units`);
+        if (!allowed || !select) continue;
+        const cap = manualUnitCap(facility, ownedTiers(facility), selectedGeneratorLevel(), selectedGeneratorCount());
+        const wanted = normalizeManualChoice(select.dataset.wanted ?? select.value);
+        delete select.dataset.wanted;
+        const counts = Array.from({ length: cap }, (_, i) => i + 1);
+        // A saved count above today's cap stays as it is, so the planner says why it can't be
+        // met rather than the page quietly asking for fewer.
+        if (typeof wanted === 'number' && wanted > cap) counts.push(wanted);
+        select.innerHTML = `<option value="${MANUAL_BEST}">最佳（由計算器決定）</option>`
+            + counts.map(n => `<option value="${n}">${n} 座${n > cap ? '（超過目前上限）' : ''}</option>`).join('');
+        select.value = String(wanted ?? MANUAL_BEST);
+        allowed.disabled = !on || (cap === 0 && !allowed.checked);
+        select.hidden = !allowed.checked;
+        select.disabled = !on;
+        caps.push(`${shown}最多 ${cap} 座`);
+    }
+    const hint = document.getElementById('electric-allocation-hint');
+    if (hint) hint.textContent = manual
+        ? `手動模式：未勾選的設施不接電；選「最佳」由計算器決定接電數量；選固定數量則是硬性要求，無法滿足時會回報原因，不會自動減少。其餘加工設施一律由計算器分配剩餘電力。依家園等級與設施數量，${caps.join('、')}。`
+        : '自動模式（預設）：由計算器共同決定礦山、水井與加工設施的接電分配。最高收益先求每小時淨收益最高，最快升級先求升級最快，再在不影響該目標下最佳化接電。';
+}
+
+function attachElectricAllocationHandlers() {
+    const rerender = () => {
+        renderElectricAllocation();
+        saveInputsToStorage();
+    };
+    ['electric-allocation-auto', 'electric-allocation-manual', 'electric-mine-allowed', 'electric-well-allowed', 'mode-simple', 'mode-advanced']
+        .forEach(id => document.getElementById(id)?.addEventListener('change', rerender));
+    // Facility counts and levels set each cap: after the facility editors' own handlers.
+    document.getElementById('facilities-grid')?.addEventListener('input', rerender);
+    document.getElementById('facilities-grid')?.addEventListener('click', rerender);
+    document.getElementById('fill-btn')?.addEventListener('click', rerender);
 }
 
 // Get plan-level input values from the form (facilities/modules/prioritize-byproducts, nothing
@@ -2894,8 +2979,11 @@ function getPlanInputValues() {
             home_level: selectedHomeLevel(),
             electric_enabled: electricSystemAvailable() && (document.getElementById('electric-enabled')?.checked ?? false),
             generator_level: selectedGeneratorLevel(),
+            generator_count: selectedGeneratorCount(),
             electric_strategy: selectedElectricStrategy(),
-            electric_forbid_facility: ''
+            electric_forbid_facility: '',
+            ...specialElectricSwitches(),
+            ...electricAllocationPayload()
         };
     }
 
@@ -2926,8 +3014,29 @@ function getPlanInputValues() {
         home_level: selectedHomeLevel(),
         electric_enabled: electricSystemAvailable() && (document.getElementById('electric-enabled')?.checked ?? false),
         generator_level: selectedGeneratorLevel(),
+        generator_count: selectedGeneratorCount(),
         electric_strategy: selectedElectricStrategy(),
-        electric_forbid_facility: ''
+        electric_forbid_facility: '',
+        ...specialElectricSwitches(),
+        ...electricAllocationPayload()
+    };
+}
+
+// The Mine/Well allocation the planner reads (see `electricAllocationInput`): each ticked
+// facility's choice (a count or "best") in manual mode.
+function electricAllocationPayload() {
+    const units = key => document.getElementById(`electric-${key}-allowed`)?.checked
+        ? document.getElementById(`electric-${key}-units`)?.value
+        : null;
+    return electricAllocationInput(selectedElectricAllocation(), units('mine'), units('well'));
+}
+
+// The Aniipod Maker's and Dance Pad Polisher's own E-mode switches, off unless ticked (the same
+// fields, and the same default, the planner reads: `JsPlanInput` in wasm.rs).
+function specialElectricSwitches() {
+    return {
+        electric_aniipod_maker: document.getElementById('electric-aniipod-maker')?.checked ?? false,
+        electric_dance_pad_polisher: document.getElementById('electric-dance-pad-polisher')?.checked ?? false,
     };
 }
 
@@ -4062,19 +4171,52 @@ function renderElectricSummary(plan) {
     const efficiency = Number(plan.electric_efficiency || 1);
     const pct = Math.round(efficiency * 100);
     const powered = (plan.electric_units || []).reduce((sum, row) => sum + Number(row[2] || 0), 0);
-    const strategy = electricStrategyLabel(plan.electric_strategy || selectedElectricStrategy());
+    const strategy = ELECTRIC_STRATEGY_LABEL;
     const rows = (plan.electric_units || []).map(([facility, item, units, power]) => `
         <tr><td>${prettyFacility(facility)}</td><td>${prettyItem(item)}</td><td>${units}</td><td>${formatNumber(Math.round(power))}W</td></tr>`).join('');
+    const count = Number(plan.electric_generator_count || 1);
+    const unit = Number(plan.electric_generator_unit_capacity || capacity);
+    // The limit is the grid's output over 1.2, e.g. 2000 W -> 1666.67 W, shown to the hundredth
+    // (every draw is a multiple of 15 W, so in practice 1665 W).
+    const limit = Math.round(threshold * 100) / 100;
+    const spare = unusedSpareWatts(plan);
     body.innerHTML = `
         <div class="electric-summary-grid">
-            <div><span class="summary-label">Generator</span><strong>Lv.${plan.electric_generator_level}</strong></div>
+            <div><span class="summary-label">Generator</span><strong>Lv.${plan.electric_generator_level} × ${count} 台</strong></div>
             <div><span class="summary-label">接入策略</span><strong>${strategy}</strong></div>
-            <div><span class="summary-label">電網需求</span><strong>${formatNumber(Math.round(demand))} / ${formatNumber(Math.round(capacity))}W</strong></div>
-            <div><span class="summary-label">120%門檻</span><strong>${formatNumber(Math.round(threshold))}W</strong></div>
+            <div><span class="summary-label">單台容量</span><strong>${formatNumber(unit)}W</strong></div>
+            <div><span class="summary-label">總容量</span><strong>${formatNumber(capacity)}W</strong></div>
+            <div><span class="summary-label">目前耗電</span><strong>${formatNumber(Math.round(demand))}W</strong></div>
+            <div><span class="summary-label">最高允許耗電</span><strong>${limit}W</strong></div>
             <div><span class="summary-label">E-mode效率</span><strong>${pct}%</strong></div>
             <div><span class="summary-label">Powered設施單位</span><strong>${powered}</strong></div>
         </div>
-        ${rows ? `<div class="table-wrapper"><table class="facility-plan-table"><thead><tr><th>設施</th><th>配方</th><th>數量</th><th>耗電</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="hint small">目前最佳方案沒有使用可確認耗電需求的 E-mode 設施。</p>'}`;
+        ${rows ? `<div class="table-wrapper"><table class="facility-plan-table"><thead><tr><th>設施</th><th>配方</th><th>數量</th><th>耗電</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="hint small">目前最佳方案沒有使用可確認耗電需求的 E-mode 設施。</p>'}
+        <p class="hint small">接電的設施固定一種配方，原料充足時以 120% 生產，原料不足時會暫停等待，不要求全時運作。</p>
+        ${spare > 0 ? `<p class="hint small">剩餘電力 ${formatNumber(Math.floor(spare))} W，目前沒有其他設施符合接電條件或最佳化需求。</p>` : ''}`;
+}
+
+// The grid's spare watts when some unpowered processing facility would still fit in them, or 0.
+// Read from the plan as it is: a processing facility the plan owns, may power (its own switch on,
+// for the Aniipod Maker and the Dance Pad Polisher) and has room for, yet left unpowered. The plan
+// doesn't say why (no supply to keep it busy all day at 120%, or its goal comes first), so the
+// summary doesn't either.
+function unusedSpareWatts(plan) {
+    const input = lastPlanInput;
+    if (!plan.electric_enabled || !input) return 0;
+    const spare = Number(plan.electric_boost_threshold || 0) - Number(plan.electric_demand || 0);
+    if (!(spare >= 1)) return 0;
+    const powered = new Set((plan.electric_units || []).map(([facility]) => facility));
+    const switchedOff = facility => (facility === 'Aniipod Maker' && !input.electric_aniipod_maker)
+        || (facility === 'Dance Pad Polisher' && !input.electric_dance_pad_polisher);
+    const fits = Object.entries(input.facilities || {}).some(([facility, tiers]) => {
+        const owned = (tiers || []).filter(t => t.count > 0);
+        if (!owned.length || powered.has(facility) || switchedOff(facility)) return false;
+        if (FACILITY_CATEGORY_BY_NAME.get(facility) !== 'Materials Processing' || !electricCompatible(facility)) return false;
+        const watts = electricRequire(facility, Math.max(...owned.map(t => t.level)));
+        return watts != null && watts <= spare + 1e-9;
+    });
+    return fits ? spare : 0;
 }
 
 function displayPlan(plan) {
@@ -4088,7 +4230,7 @@ function displayPlan(plan) {
     if (!plan.success) {
         goalSection.style.display = 'none';
         if (selectedSetupTab() === 'custom') {
-            showRosterShortfall();
+            showRosterShortfall(plan.error);
             return;
         }
         showError(plan.error || '發生未知錯誤。');
@@ -4571,6 +4713,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     attachHomeProfileHandlers();
     attachFacilityTierHandlers();
     attachModeHandlers();
+    attachElectricAllocationHandlers();
     attachStrategyHandlers();
     attachSkipHandlers();
     renderSkippedRecipes();
@@ -4578,7 +4721,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderSpecialRecipes();
     attachSeasonHandlers();
     attachRosterHandlers();
-    attachElectricLayoutHandlers();
     attachPriorityHandlers();
     showAniimoSetup();
     applyConfigMode();

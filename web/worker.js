@@ -74,6 +74,15 @@ function tiebreakOf(problem, values) {
     return (problem.tiebreak || []).reduce((sum, [v, weight]) => sum + weight * (values[v] || 0), 0);
 }
 
+// A model from one of the `exact_*_problem` exports; one that comes back with an `error` (the
+// input can't be planned, e.g. a roster with E-mode on and no Lightning Aniimo) throws that
+// reason as it is.
+function modelOrThrow(json) {
+    const problem = JSON.parse(json);
+    if (problem.error) throw new Error(problem.error);
+    return problem;
+}
+
 // The exact planner (see `exact_problem` in wasm.rs): builds the model in wasm, solves it with
 // HiGHS, and turns the answer back into a plan. With "prioritize byproducts" on, it first finds
 // the most of each byproduct the facilities can make and requires the plan to keep that much.
@@ -88,11 +97,40 @@ function tiebreakOf(problem, values) {
 // nothing before it, `{ measure, objective, proven }`: the most of its first priority, its
 // level-up pace, or its Home Coins. The page's Opportunities solve that same model for the plan
 // as it stands, so they take it from here.
+// E-mode's priorities, after the plan's own goal: first the most powered facility units the grid's
+// limit allows (each keeps its fixed recipe and may wait for inputs), then, keeping that many, the
+// most watts they draw. Both results are whole numbers (whole units, whole watts), so every later
+// model keeps them exactly, through the input (`electric_min_powered`, `electric_min_draw`).
+// `stageJson` carries what the plan's goal reached, to keep: a level-up pace, or the floors with
+// the plan's currency per second. In manual mode the Mine and Well counts are already fixed by the
+// input; these solves share out the rest. Returns that input and whether both solves were proven,
+// or null when E-mode is off.
+async function withElectricFloors(pkg, payload, step, stageJson = '{}') {
+    const units = modelOrThrow(pkg.exact_electric_problem(payload, stageJson, 'units'));
+    if (!units.lp) return null;
+    step('electric', 'start');
+    const most = await solveModel(units);
+    if (!most) throw new Error('no plan found for the most powered facilities');
+    const input = { ...JSON.parse(payload), electric_min_powered: Math.max(0, Math.round(most.objective)) };
+    const draw = modelOrThrow(pkg.exact_electric_problem(JSON.stringify(input), stageJson, 'draw'));
+    const drawn = draw.lp ? await solveModel(draw) : null;
+    if (draw.lp && !drawn) throw new Error('no plan found for the most power drawn');
+    input.electric_min_draw = Math.max(0, Math.round(drawn?.objective ?? 0));
+    const proven = most.proven && (drawn?.proven ?? true);
+    step('electric', 'done', proven);
+    return { payload: JSON.stringify(input), proven };
+}
+
 async function exactPlanJson(pkg, payload, step = () => {}, first = () => {}) {
     const { exact_byproduct_problems, exact_priority_problem, exact_level_up_problem, exact_problem, exact_plan } = pkg;
     const stage = { floors: [] };
     let allProven = true;
+    // E-mode's floors come after the plan's own goal, keeping it: for the level-up strategy right
+    // after the soonest level-up, keeping its pace; otherwise after the plan's priorities and the
+    // most coins, keeping those (see below).
+    const levelingUp = !!JSON.parse(payload).level_up;
     for (const problem of JSON.parse(exact_byproduct_problems(payload))) {
+        if (problem.error) throw new Error(problem.error);
         const most = await solveModel(problem);
         if (!most) throw new Error(`no plan found for the most ${problem.resource}`);
         allProven &&= most.proven;
@@ -103,7 +141,7 @@ async function exactPlanJson(pkg, payload, step = () => {}, first = () => {}) {
     for (const target of JSON.parse(payload).priorities || []) {
         step(`priority:${target}`, 'start');
         const alone = stage.floors.length === 0;
-        const priority = JSON.parse(exact_priority_problem(payload, JSON.stringify(stage), target));
+        const priority = modelOrThrow(exact_priority_problem(payload, JSON.stringify(stage), target));
         if (!priority.lp) throw new Error('this setup isn\'t covered by the exact planner');
         const most = await solveModel(priority);
         step(`priority:${target}`, 'done', most?.proven);
@@ -114,7 +152,7 @@ async function exactPlanJson(pkg, payload, step = () => {}, first = () => {}) {
     }
 
     let levelUpNote = null;
-    const levelUp = JSON.parse(exact_level_up_problem(payload));
+    const levelUp = modelOrThrow(exact_level_up_problem(payload));
     if (levelUp.lp) {
         step('level_up', 'start');
         const fastest = await solveModel(levelUp);
@@ -128,14 +166,37 @@ async function exactPlanJson(pkg, payload, step = () => {}, first = () => {}) {
             levelUpNote = 'unreachable';
         }
     }
+    if (levelingUp && stage.pace) {
+        // The soonest level-up stays first: E-mode's floors are found keeping its pace.
+        const electric = await withElectricFloors(pkg, payload, step, JSON.stringify(stage));
+        if (electric) {
+            payload = electric.payload;
+            allProven &&= electric.proven;
+        }
+    }
     let stageJson = JSON.stringify(stage);
-    let problem = JSON.parse(exact_problem(payload, stageJson));
+    let problem = modelOrThrow(exact_problem(payload, stageJson));
     if (!problem.lp) throw new Error('this setup isn\'t covered by the exact planner');
     step('final', 'start');
     const alone = stage.floors.length === 0 && !stage.pace;
     let solved = await solveModel(problem);
     if (!solved) throw new Error('the solver found no plan');
     if (alone) first({ measure: 'coins', objective: solved.objective, proven: solved.proven });
+    if (!stage.pace) {
+        // A plan for coins (or one whose level-up can't be reached): its priorities and the most
+        // coins come first, and E-mode is shared out keeping them, then the plan is solved again
+        // with E-mode's floors. More powered units never cost the plan coins.
+        const currency = JSON.parse(payload).currency || 'coins';
+        const earned = { floors: [...stage.floors, [currency, Math.max(0, solved.objective)]] };
+        const electric = await withElectricFloors(pkg, payload, step, JSON.stringify(earned));
+        if (electric) {
+            payload = electric.payload;
+            allProven &&= electric.proven;
+            problem = modelOrThrow(exact_problem(payload, stageJson));
+            solved = await solveModel(problem);
+            if (!solved) throw new Error('the solver found no plan with E-mode\'s floors');
+        }
+    }
     let proven = solved.proven && allProven;
     let bound = solved.objective;
     if (!proven) {
@@ -152,7 +213,7 @@ async function exactPlanJson(pkg, payload, step = () => {}, first = () => {}) {
         const stockStage = { ...stage, coins: solved.objective };
         const stockJson = JSON.stringify(stockStage);
         step('stock_up', 'start');
-        const stocked = await solveModel(JSON.parse(exact_problem(payload, stockJson)));
+        const stocked = await solveModel(modelOrThrow(exact_problem(payload, stockJson)));
         step('stock_up', 'done', stocked?.proven);
         step('check', 'start');
         const stockedPlan = stocked
@@ -222,7 +283,9 @@ async function rankImprovements(pkg, payload, report) {
     const { measure, base, candidates, baseTop: given } = JSON.parse(payload);
     const topOf = async (input) => {
         const json = JSON.stringify(input);
-        const problem = JSON.parse(measure === 'level_up'
+        // An input the planner rejects stops the ranking (the page marks it failed and keeps the
+        // plan); only a model that's merely empty counts as "nothing to rank".
+        const problem = modelOrThrow(measure === 'level_up'
             ? pkg.exact_level_up_problem(json)
             : pkg.exact_priority_problem(json, JSON.stringify({ floors: [] }), measure));
         if (!problem.lp) return null;
@@ -232,7 +295,7 @@ async function rankImprovements(pkg, payload, report) {
     const coinsAt = async (input, top) => {
         if (measure === 'coins') return null;
         const json = JSON.stringify(input);
-        const problem = JSON.parse(measure === 'level_up'
+        const problem = modelOrThrow(measure === 'level_up'
             ? pkg.exact_problem(json, JSON.stringify({ floors: [], pace: top }))
             : pkg.exact_priority_problem(json, JSON.stringify({ floors: [[measure, Math.max(0, top)]] }), 'coins'));
         if (!problem.lp) return null;
@@ -303,7 +366,20 @@ self.onmessage = async (event) => {
                 // The backup planner doesn't know the player's roster, so a roster plan stops here.
                 if (JSON.parse(payload).aniimo?.startsWith('roster')) {
                     console.warn('Exact planner failed on a roster:', error);
-                    result = JSON.stringify({ success: false, error: `No plan found with these Aniimo: ${fallbackReason}.` });
+                    // The reason may end in its own full stop; end the message with exactly one.
+                    result = JSON.stringify({ success: false, error: `No plan found with these Aniimo: ${fallbackReason.replace(/\.+\s*$/, '')}.` });
+                } else if (JSON.parse(payload).electric_enabled && JSON.parse(payload).electric_allocation === 'manual') {
+                    // Nor does it keep the player's own Mine and Well power counts, which are
+                    // hard requirements: say why they can't be met rather than plan with fewer.
+                    console.warn('Exact planner failed with a manual E-mode allocation:', error);
+                    const reason = fallbackReason.startsWith('手動指定') ? fallbackReason
+                        : `找不到同時符合指定接電數量、固定配方、原料平衡、120% 耗電上限與 Aniimo 工時的方案（${fallbackReason}）。`;
+                    result = JSON.stringify({ success: false, error: `手動接電數量無法滿足：${reason}` });
+                } else if (JSON.parse(payload).season) {
+                    // Nor does it keep the Harvest Moon Festival's crops growing, so a festival plan
+                    // stops here too rather than quietly leave them out.
+                    console.warn('Exact planner failed during the festival:', error);
+                    result = JSON.stringify({ success: false, error: `盈月豐收節方案無法完成：${fallbackReason}` });
                 } else {
                     step('backup', 'start');
                     console.warn('Exact planner failed; using the backup planner instead:', error);

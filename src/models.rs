@@ -1174,6 +1174,9 @@ pub struct FacilityCounts {
     default_tier: (u32, u32),
     /// The Aniimo the player has, when planning with them (see [`Crew`]).
     crew: Option<Crew>,
+    /// Recipes a plan must keep making, as `(recipe, plots)`: at least that many units' worth of
+    /// its work, all the time, e.g. a season's crops (see [`FacilityCounts::require_units`]).
+    required: Vec<(String, u32)>,
 }
 
 impl Default for FacilityCounts {
@@ -1182,6 +1185,7 @@ impl Default for FacilityCounts {
             facilities: std::collections::HashMap::new(),
             default_tier: (1, 1),
             crew: None,
+            required: Vec::new(),
         }
     }
 }
@@ -1191,6 +1195,18 @@ impl FacilityCounts {
     pub fn set_crew(&mut self, crew: Crew) -> &mut Self {
         self.crew = Some(crew);
         self
+    }
+
+    /// Requires every plan to keep at least `units` units of `recipe` (by its base name, so any
+    /// variant of it counts) working all the time.
+    pub fn require_units(&mut self, recipe: &str, units: u32) -> &mut Self {
+        self.required.push((recipe.to_string(), units));
+        self
+    }
+
+    /// What [`FacilityCounts::require_units`] asked for.
+    pub fn required_units(&self) -> &[(String, u32)] {
+        &self.required
     }
 
     /// The Aniimo the player has, if planning with them.
@@ -1232,6 +1248,7 @@ impl FacilityCounts {
             facilities: std::collections::HashMap::new(),
             default_tier: (0, 1),
             crew: None,
+            required: Vec::new(),
         };
         for (name, count, level) in pairs {
             fc.set(name, *count, *level);
@@ -1246,6 +1263,7 @@ impl FacilityCounts {
             facilities: std::collections::HashMap::new(),
             default_tier: (1, 99),
             crew: None,
+            required: Vec::new(),
         }
     }
 

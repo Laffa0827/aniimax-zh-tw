@@ -83,7 +83,7 @@
                         <span class="hint small">將下方所有數量與等級替換為該 RV 等級可擁有的配置。</span>
                     </div>
 
-                    <!-- Facility cards are generated dynamically by app.js?v=20261005-15 from the FACILITIES config,
+                    <!-- Facility cards are generated dynamically by app.js?v=20261011-1 from the FACILITIES config,
                          grouped into category sections (Materials / Environment / Materials
                          Processing), so new facilities can be added without editing this file. -->
                     <div class="facilities-container" id="facilities-grid"></div>
@@ -175,13 +175,44 @@
                             </div>
                         </div>
                         <div class="electric-strategy">
-                            <h4>電力接入策略</h4>
-                            <div class="tabs electric-strategy-tabs" role="radiogroup" aria-label="電力接入策略">
-                                <label><input type="radio" name="electric-strategy" id="electric-strategy-raw" value="raw"> 只接入原料生產（礦山／水井）</label>
-                                <label><input type="radio" name="electric-strategy" id="electric-strategy-workstations" value="workstations"> 只接入作業台</label>
-                                <label><input type="radio" name="electric-strategy" id="electric-strategy-combined" value="combined" checked> 綜合</label>
+                            <h4>電力接入策略：綜合</h4>
+                            <p class="hint small">固定採用綜合模式：礦山、水井與加工設施都可接電，最佳化器會保證整個電網維持 120% E-MODE 效率。</p>
+                            <label class="priority-switch">
+                                <input type="checkbox" role="switch" id="electric-aniipod-maker">
+                                <span class="switch-track" aria-hidden="true"></span>
+                                <span>啟用謎立方製造機 E-MODE</span>
+                            </label>
+                            <label class="priority-switch">
+                                <input type="checkbox" role="switch" id="electric-dance-pad-polisher">
+                                <span class="switch-track" aria-hidden="true"></span>
+                                <span>啟用舞力能量機 E-MODE</span>
+                            </label>
+                        </div>
+                        <div class="electric-allocation">
+                            <h4>礦山／水井接電分配</h4>
+                            <div class="tabs" role="radiogroup" aria-label="礦山／水井接電分配">
+                                <label><input type="radio" name="electric-allocation" id="electric-allocation-auto" value="auto" checked> 由計算器決定最佳分配</label>
+                                <label><input type="radio" name="electric-allocation" id="electric-allocation-manual" value="manual"> 手動指定接電數量</label>
                             </div>
-                            <p class="hint small">三者互斥；無論選哪一種，最佳化器都會保證整個電網維持 120% E-MODE 效率。</p>
+                            <div class="electric-manual-grid" id="electric-manual-config" hidden>
+                                <div class="electric-manual-item">
+                                    <label class="priority-switch">
+                                        <input type="checkbox" role="switch" id="electric-mine-allowed">
+                                        <span class="switch-track" aria-hidden="true"></span>
+                                        <span>允許礦山接電</span>
+                                    </label>
+                                    <select id="electric-mine-units" aria-label="礦山接電數量" hidden></select>
+                                </div>
+                                <div class="electric-manual-item">
+                                    <label class="priority-switch">
+                                        <input type="checkbox" role="switch" id="electric-well-allowed">
+                                        <span class="switch-track" aria-hidden="true"></span>
+                                        <span>允許水井接電</span>
+                                    </label>
+                                    <select id="electric-well-units" aria-label="水井接電數量" hidden></select>
+                                </div>
+                            </div>
+                            <p class="hint small" id="electric-allocation-hint"></p>
                         </div>
                         <p class="hint small" id="electric-generator-hint"></p>
                     </div>
@@ -319,7 +350,7 @@
                             <p>每一列代表一種商品；同一設施分配多種商品時會各列一列。需要生長環境的作物會依覆蓋它們的熱能爐、製冷機或日光燈環境分組，並顯示配置方式。其他設施則依設施分類顯示。</p>
                             <p>Aniimo 欄位中的圓點代表對應能力與等級；帶有外圈表示方案依賴該設施的個性加成。將游標移到能力上可查看詳細資訊。</p>
                         </details>
-                        <!-- Populated by app.js?v=20261005-15's renderFacilityPlan(): one section per
+                        <!-- Populated by app.js?v=20261011-1's renderFacilityPlan(): one section per
                              environment mode in use (Cool/Warm/Freeze/Scorching/Adequate) first,
                              then one table per facility category (Materials / Environment /
                              Materials Processing) for everything else. -->
@@ -565,6 +596,6 @@
             }
         });
     </script>
-    <script type="module" src="app.js?v=20261005-15"></script>
+    <script type="module" src="app.js?v=20261011-1"></script>
 </body>
 </html>

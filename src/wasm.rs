@@ -5,7 +5,10 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::electric::{electric_facility_code, electric_require, ElectricConfig};
+use crate::electric::{
+    crew_can_staff_generator, electric_facility_code, electric_require, generator_count_for_rv,
+    missing_generator_staff_error, ElectricConfig,
+};
 use crate::models::{FacilityCounts, ModuleLevels, ProductionEfficiency, ProductionItem};
 use crate::optimizer::{
     calculate_efficiencies, calculate_energy_efficiencies, find_best_production_path,
@@ -697,12 +700,84 @@ fn default_electric_strategy() -> String {
     "combined".to_string()
 }
 
-fn electric_strategy_id(strategy: &str) -> u8 {
-    match strategy {
-        "raw" => 1,
-        "workstations" => 2,
-        _ => 0,
+/// The Harvest Moon Festival's crops, each grown on at least one Farmland plot while the festival is
+/// on, with their names as the page shows them.
+const SEASON_CROPS: [(&str, &str); 2] = [("moondew_radish", "月露蘿蔔"), ("waxing_moon_pepper", "盈月椒")];
+
+/// Requires the festival's crops of every plan (see [`FacilityCounts::require_units`]), or says why
+/// that can't be done: a crop no Farmland here can grow (not owned, too low a level, skipped, or
+/// with no Aniimo for its jobs), or fewer plots than crops.
+fn require_season_crops(items: &[ProductionItem], facility_counts: &mut FacilityCounts) -> Result<(), String> {
+    let mut plots_needed = 0;
+    let mut lowest_level = u32::MAX;
+    for (crop, shown) in SEASON_CROPS {
+        let growable: Vec<&ProductionItem> = items
+            .iter()
+            .filter(|i| crate::models::base_item_name(&i.name) == crop && i.production_time > 0.0)
+            .filter(|i| facility_counts.can_produce(&i.facility, i.facility_level))
+            .collect();
+        if growable.is_empty() {
+            return Err(format!(
+                "盈月豐收節需要種植{shown}，但目前的設定無法種植（沒有足夠等級的田地、已略過此作物，或沒有 Aniimo 能完成它的種植工作）。"
+            ));
+        }
+        plots_needed += 1;
+        lowest_level = lowest_level.min(growable.iter().map(|i| i.facility_level).min().unwrap_or(1));
     }
+    let plots = facility_counts.capacity_at_level("Farmland", lowest_level);
+    if plots < plots_needed {
+        return Err(format!("盈月豐收節需要月露蘿蔔、盈月椒各至少 1 塊田地，共 {plots_needed} 塊，但目前只有 {plots} 塊可用的田地。"));
+    }
+    for (crop, _) in SEASON_CROPS {
+        facility_counts.require_units(crop, 1);
+    }
+    Ok(())
+}
+
+/// The Mine and the Well, as the page names them, for manual E-mode allocation.
+const MANUAL_FACILITIES: [(&str, &str); 2] = [("Mine", "礦山"), ("Well", "水井")];
+
+/// Whether `power`'s manual Mine and Well counts can be kept at all: enough units owned, a recipe
+/// for them to run, and room for them on the grid (its 120% limit). The rest (keeping them
+/// running, their Aniimo) is the model's to settle.
+fn check_manual_units(items: &[ProductionItem], facility_counts: &FacilityCounts, power: &ElectricConfig) -> Result<(), String> {
+    let mut draw = 0.0;
+    let mut parts = Vec::new();
+    for (facility, shown) in MANUAL_FACILITIES {
+        let Some(units) = power.manual_units(facility).filter(|&u| u > 0) else { continue };
+        let owned = facility_counts.get_count(facility);
+        if units > owned {
+            return Err(format!("手動指定{shown}接電 {units} 座，但目前只有 {owned} 座{shown}。"));
+        }
+        let runs = items.iter().any(|i| {
+            i.facility == facility && i.production_time > 0.0 && facility_counts.can_produce(&i.facility, i.facility_level)
+        });
+        if !runs {
+            return Err(format!("手動指定{shown}接電 {units} 座，但目前沒有{shown}能生產的配方（可能都已略過），接電的{shown}沒有可固定的配方。"));
+        }
+        let Some(watts) = electric_require(facility, facility_counts.get_level(facility)) else { continue };
+        draw += units as f64 * watts;
+        parts.push(format!("{shown} {units} 座 × {watts}W"));
+    }
+    if draw > power.boost_threshold() + 1e-6 {
+        return Err(format!(
+            "手動指定的接電數量（{}）共需 {draw}W，超過電網的 120% 耗電上限 {:.2}W。",
+            parts.join("、"),
+            power.boost_threshold()
+        ));
+    }
+    Ok(())
+}
+
+/// The only E-mode strategy the page offers: combined (Mine, Well and processing facilities alike).
+/// Any other value an old saved setup or share link still carries (`raw`, `workstations`, ...) is
+/// read as this one.
+const ELECTRIC_STRATEGY: &str = "combined";
+
+/// The planner's id for [`ELECTRIC_STRATEGY`] (0 = combined; see `ElectricConfig::strategy`),
+/// whatever the input asked for.
+fn electric_strategy_id(_strategy: &str) -> u8 {
+    0
 }
 
 fn default_generator_level() -> u8 {
@@ -785,6 +860,41 @@ pub struct JsPlanInput {
     /// Internal-only counterfactual: temporarily forbid E-mode on one facility type.
     #[serde(default)]
     pub electric_forbid_facility: String,
+    /// How many Crackle Generators feed the grid; left out, it follows `home_level` (see
+    /// [`crate::electric::generator_count_for_rv`]).
+    #[serde(default)]
+    pub generator_count: Option<u8>,
+    /// Set by the page's worker after its first E-mode solve: keep at least this many powered
+    /// units (see [`exact_electric_problem`]).
+    #[serde(default)]
+    pub electric_min_powered: u32,
+    /// Set after the second E-mode solve: keep the powered units drawing at least this many watts.
+    #[serde(default)]
+    pub electric_min_draw: u32,
+    /// Whether the Aniipod Maker may be powered; off unless the page says so.
+    #[serde(default)]
+    pub electric_aniipod_maker: bool,
+    /// Whether the Dance Pad Polisher may be powered; off unless the page says so.
+    #[serde(default)]
+    pub electric_dance_pad_polisher: bool,
+    /// How E-mode's power is shared out: `"manual"` keeps the player's own Mine and Well counts
+    /// (`electric_mine_units`, `electric_well_units`) exactly; anything else, or nothing (an
+    /// older saved setup), is `"auto"`, where the planner decides for every facility.
+    #[serde(default)]
+    pub electric_allocation: String,
+    /// Manual mode: powered Mine units. Left out (the Mines not ticked), the Mines get none.
+    #[serde(default)]
+    pub electric_mine_units: Option<u32>,
+    /// Manual mode: powered Well units, as `electric_mine_units`.
+    #[serde(default)]
+    pub electric_well_units: Option<u32>,
+    /// Manual mode, the Mines allowed power with "最佳" (best) picked: the planner decides how many,
+    /// as in auto mode, and `electric_mine_units` is ignored. Off by default.
+    #[serde(default)]
+    pub electric_mine_best: bool,
+    /// The same for the Wells.
+    #[serde(default)]
+    pub electric_well_best: bool,
 }
 
 /// The player's Aniimo, and what the page knows of the facilities they work (see
@@ -834,12 +944,31 @@ impl JsRoster {
 
 impl JsPlanInput {
     fn electric_config(&self) -> Option<ElectricConfig> {
-        (self.electric_enabled && self.home_level >= 12)
-            .then(|| ElectricConfig::new_with_strategy_and_forbidden(
+        (self.electric_enabled && self.home_level >= 12).then(|| {
+            ElectricConfig::new_with_strategy_and_forbidden(
                 self.generator_level,
                 electric_strategy_id(&self.electric_strategy),
                 electric_facility_code(&self.electric_forbid_facility),
-            ))
+            )
+            .with_generators(self.generator_count.unwrap_or_else(|| generator_count_for_rv(self.home_level)))
+            .with_floors(self.electric_min_powered, self.electric_min_draw)
+            .with_special_facilities(self.electric_aniipod_maker, self.electric_dance_pad_polisher)
+            .with_manual_units(
+                self.manual_units(self.electric_mine_units, self.electric_mine_best),
+                self.manual_units(self.electric_well_units, self.electric_well_best),
+            )
+        })
+    }
+
+    /// Whether the player shares out the Mines' and Wells' power themselves.
+    fn manual_allocation(&self) -> bool {
+        self.electric_allocation == "manual"
+    }
+
+    /// A Mine or Well count as the planner keeps it: in manual mode, exactly that many (none when
+    /// left out), unless `best` leaves it to the planner; in auto mode, no fixed count.
+    fn manual_units(&self, units: Option<u32>, best: bool) -> Option<u32> {
+        (self.manual_allocation() && !best).then(|| units.unwrap_or(0))
     }
 
     /// Builds a [`FacilityCounts`] from the `facilities` map.
@@ -1265,8 +1394,16 @@ pub struct JsProductionPlan {
     pub electric_generator_level: u8,
     #[serde(default)]
     pub electric_strategy: String,
+    /// How many Crackle Generators feed the grid.
+    #[serde(default)]
+    pub electric_generator_count: u8,
+    /// One generator's output at its level, in watts.
+    #[serde(default)]
+    pub electric_generator_unit_capacity: f64,
+    /// The whole grid's output: count x unit capacity.
     #[serde(default)]
     pub electric_generator_capacity: f64,
+    /// The most the powered units may draw: the grid's output over 1.2.
     #[serde(default)]
     pub electric_boost_threshold: f64,
     #[serde(default)]
@@ -1341,6 +1478,8 @@ fn empty_production_plan(success: bool, error: Option<String>) -> JsProductionPl
         electric_enabled: false,
         electric_generator_level: 0,
         electric_strategy: "combined".to_string(),
+        electric_generator_count: 0,
+        electric_generator_unit_capacity: 0.0,
         electric_generator_capacity: 0.0,
         electric_boost_threshold: 0.0,
         electric_demand: 0.0,
@@ -1415,7 +1554,10 @@ pub fn find_plan(input_json: &str, on_progress: Option<js_sys::Function>) -> Str
 /// Empty when byproducts aren't prioritized.
 #[wasm_bindgen]
 pub fn exact_byproduct_problems(input_json: &str) -> String {
-    let Ok(prepared) = PreparedInput::from_json(input_json) else { return "[]".to_string() };
+    let prepared = match PreparedInput::from_json(input_json) {
+        Ok(prepared) => prepared,
+        Err(rejected) => return format!("[{}]", lp_error_json(&rejected)),
+    };
     if !prepared.input.prioritize_byproducts || prepared.input.currency != "coins" || prepared.input.level_up.is_some() {
         return "[]".to_string();
     }
@@ -1452,9 +1594,44 @@ pub fn exact_priority_problem(input_json: &str, stage_json: &str, target: &str) 
             crate::exact::Goal::Earn { floors: &stage.floors },
             prepared.input.electric_config().as_ref(),
         ),
-        Err(_) => Default::default(),
+        Err(rejected) => return lp_error_json(&rejected),
     };
     lp_json(&lp)
+}
+
+/// E-mode's two priorities: `measure` `"units"` is the model for the most powered facility units,
+/// and `"draw"` the most watts they draw while keeping `electric_min_powered`. They come after the
+/// plan's own goal and keep it: with a level-up `pace` in `stage_json` (see
+/// [`exact_level_up_problem`]) that pace ([`crate::exact::Goal::MostPoweredLevelingUp`]),
+/// otherwise its `floors`, which then hold the plan's currency per second too
+/// ([`crate::exact::Goal::MostPoweredEarning`]). `{"lp", "variables", "tiebreak"}` as in
+/// [`exact_problem`]; the caller solves it and passes the result on as `electric_min_powered` or
+/// `electric_min_draw` in the input, which every later model (and [`exact_plan`]) then keeps. `lp`
+/// is empty when E-mode is off; a rejected input carries `error`.
+#[wasm_bindgen]
+pub fn exact_electric_problem(input_json: &str, stage_json: &str, measure: &str) -> String {
+    let prepared = match PreparedInput::from_json(input_json) {
+        Ok(prepared) => prepared,
+        Err(rejected) => return lp_error_json(&rejected),
+    };
+    let stage: JsStage = serde_json::from_str(stage_json).unwrap_or_default();
+    let pace = prepared.input.level_up.as_ref().zip(stage.pace);
+    let goal = match (measure, pace) {
+        ("units", None) => crate::exact::Goal::MostPoweredEarning(&stage.floors),
+        ("draw", None) => crate::exact::Goal::MostPowerDrawEarning(&stage.floors),
+        ("units", Some((level_up, pace))) => crate::exact::Goal::MostPoweredLevelingUp(level_up, pace),
+        ("draw", Some((level_up, pace))) => crate::exact::Goal::MostPowerDrawLevelingUp(level_up, pace),
+        _ => return lp_json(&Default::default()),
+    };
+    let Some(power) = prepared.input.electric_config() else { return lp_json(&Default::default()) };
+    lp_json(&crate::exact::write_lp_with_power(
+        &prepared.items,
+        &prepared.input.currency,
+        &prepared.facility_counts,
+        &prepared.module_levels,
+        goal,
+        Some(&power),
+    ))
 }
 
 /// For the level-up strategy, the model for the soonest level-up (see
@@ -1475,7 +1652,7 @@ pub fn exact_level_up_problem(input_json: &str) -> String {
             ),
             _ => Default::default(),
         },
-        Err(_) => Default::default(),
+        Err(rejected) => return lp_error_json(&rejected),
     };
     lp_json(&lp)
 }
@@ -1527,7 +1704,8 @@ pub fn exact_problem(input_json: &str, stage_json: &str) -> String {
             stage.goal(&prepared.input),
             prepared.input.electric_config().as_ref(),
         ),
-        _ => Default::default(),
+        Ok(_) => Default::default(),
+        Err(rejected) => return lp_error_json(&rejected),
     };
     lp_json(&lp)
 }
@@ -1535,6 +1713,20 @@ pub fn exact_problem(input_json: &str, stage_json: &str) -> String {
 /// `{"lp", "variables", "tiebreak"}` for a model (see [`crate::exact::LpProblem`]).
 fn lp_json(problem: &crate::exact::LpProblem) -> String {
     serde_json::json!({ "lp": problem.lp, "variables": problem.variables, "tiebreak": problem.tiebreak }).to_string()
+}
+
+/// An empty model carrying why the input can't be planned (the `error` of the plan JSON
+/// [`PreparedInput::from_json`] rejected it with), so the caller can report that reason.
+fn lp_error_json(rejected: &str) -> String {
+    serde_json::json!({ "lp": "", "variables": 0, "tiebreak": [], "error": input_error(rejected) }).to_string()
+}
+
+/// The reason in the plan JSON [`PreparedInput::from_json`] rejects an input with.
+fn input_error(rejected: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(rejected)
+        .ok()
+        .and_then(|plan| plan["error"].as_str().map(str::to_string))
+        .unwrap_or_else(|| "Invalid input".to_string())
 }
 
 /// The solver's answer to [`exact_problem`]'s model.
@@ -1603,7 +1795,9 @@ pub fn exact_plan(input_json: &str, stage_json: &str, solution_json: &str) -> St
         let demand: f64 = electric_units.iter().map(|(_, _, _, p)| *p).sum();
         js.electric_enabled = true;
         js.electric_generator_level = power.generator_level;
-        js.electric_strategy = prepared.input.electric_strategy.clone();
+        js.electric_strategy = ELECTRIC_STRATEGY.to_string();
+        js.electric_generator_count = power.generator_count;
+        js.electric_generator_unit_capacity = power.unit_capacity();
         js.electric_generator_capacity = power.capacity();
         js.electric_boost_threshold = power.boost_threshold();
         js.electric_demand = demand;
@@ -1655,7 +1849,8 @@ fn level_up_report(
     let seconds = crate::exact::PACE_UNIT / pace;
     let level_up_item = |name: &str| {
         crate::models::BYPRODUCT_ITEMS.iter().any(|(_, item)| *item == name)
-            || items.iter().any(|i| i.name == name && crate::exact::takes_turns(i))
+            // Level-up materials: what the Woodworking Bench and Chimney Kiln make, sold for nothing.
+            || items.iter().any(|i| i.name == name && i.sell_currency == "none")
     };
     let mut names: Vec<&str> = net.keys().map(String::as_str).chain(level_up.stock.iter().map(|(n, _)| n.as_str())).collect();
     names.sort_unstable();
@@ -1723,6 +1918,14 @@ impl PreparedInput {
             (Some(name), Some(roster)) if name.starts_with("roster") => Some(roster.crew()),
             _ => None,
         };
+        // With the player's own roster and E-mode on, someone has to staff the Crackle
+        // Generator: stop here with that reason rather than let the model fail for no stated one.
+        if let Some(crew) = &crew {
+            if input.electric_config().is_some() && !crew_can_staff_generator(crew) {
+                return Err(serde_json::to_string(&empty_production_plan(false, Some(missing_generator_staff_error())))
+                    .unwrap_or_default());
+            }
+        }
         match (&crew, &setup) {
             (Some(crew), _) => {
                 items = crate::models::crew_variants(items, crew, &requirements, &grower_steps);
@@ -1730,6 +1933,20 @@ impl PreparedInput {
             }
             (None, Some(setup)) => requirements.apply(setup, &mut items),
             (None, None) => workers_from(&input.workers).apply(&requirements, &mut items),
+        }
+        // Manual E-mode allocation: the Mine and Well counts are kept as given, so say now when
+        // they can't be rather than plan with fewer.
+        if let Some(power) = input.electric_config() {
+            if let Err(reason) = check_manual_units(&items, &facility_counts, &power) {
+                return Err(serde_json::to_string(&empty_production_plan(false, Some(reason))).unwrap_or_default());
+            }
+        }
+        // With the Harvest Moon Festival on, both its crops are grown on at least one plot each;
+        // when that can't be, say why rather than plan without them.
+        if input.season {
+            if let Err(reason) = require_season_crops(&items, &mut facility_counts) {
+                return Err(serde_json::to_string(&empty_production_plan(false, Some(reason))).unwrap_or_default());
+            }
         }
         Ok(PreparedInput { input, facility_counts, module_levels, items, setup, crew, requirements, grower_steps })
     }
@@ -1818,6 +2035,8 @@ impl PreparedInput {
             electric_enabled: false,
             electric_generator_level: 0,
             electric_strategy: "combined".to_string(),
+            electric_generator_count: 0,
+            electric_generator_unit_capacity: 0.0,
             electric_generator_capacity: 0.0,
             electric_boost_threshold: 0.0,
             electric_demand: 0.0,

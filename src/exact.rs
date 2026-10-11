@@ -5,8 +5,8 @@
 //! - Every available recipe `r` gets a rate `b_r` (batches/sec) and a whole number of units
 //!   `u_r` set to it (plots for a crop, machines for a processed item): `b_r * t_r <= u_r`, where
 //!   `t_r` is the recipe's time per batch. A unit makes one thing and is left running, so units
-//!   are never shared between recipes. The exception is level-up materials (see [`takes_turns`]):
-//!   one Woodworking Bench has to make each tier in turn, so its recipes share its time.
+//!   are never shared between recipes, the Woodworking Bench and Chimney Kiln included: each
+//!   unit keeps to one fixed recipe.
 //! - Every item balances: what's made covers what recipes use plus what's sold. A quick variant
 //!   (e.g. `quick_wheat`) makes the same item as the regular one (`wheat`).
 //! - Each facility's units per recipe add up to at most what's owned, counting only units at a
@@ -42,7 +42,10 @@ use crate::coverage::{
     facility_footprint, mode_temperature, single_building_options, temperature_mode, CoverageOption,
     building_size, pair_options_over_offsets, Offset, PairOption, PairSizes, Zone, ENVIRONMENT_GATED_FACILITIES,
 };
-use crate::electric::{electric_compatible, electric_require, ElectricConfig};
+use crate::electric::{
+    can_staff_generator, electric_compatible, electric_require, ElectricConfig, GENERATOR_ABILITY,
+    GENERATOR_BUILDING,
+};
 use crate::models::{byproduct_item, FacilityCounts, ModuleLevels, ProductionItem};
 
 /// Whether plans may place two environment buildings to overlap, for the zone their temperatures
@@ -158,6 +161,34 @@ pub enum Goal<'a> {
     /// (each as a share of its cost): spare Bench and Kiln time processes whatever the level-up
     /// doesn't need yet, instead of leaving it raw.
     StockUp(&'a LevelUp, f64, f64),
+    /// E-mode's first priority: the most powered facility units the grid's limit and the chosen
+    /// strategy allow, whatever they make. Its result becomes `ElectricConfig::min_powered`.
+    MostPowered,
+    /// E-mode's second priority: with `ElectricConfig::min_powered` kept, the most watts the
+    /// powered units draw, up to the grid's limit. Its result becomes `ElectricConfig::min_draw`;
+    /// the plan's own goal (coins, priorities, a level-up) comes after both.
+    MostPowerDraw,
+    /// [`Goal::MostPowered`] for the level-up strategy: the soonest level-up comes first, so this
+    /// keeps its pace (level-ups per day, as in [`Goal::EarnWhileLevelingUp`]).
+    MostPoweredLevelingUp(&'a LevelUp, f64),
+    /// [`Goal::MostPowerDraw`] keeping the level-up's pace too.
+    MostPowerDrawLevelingUp(&'a LevelUp, f64),
+    /// [`Goal::MostPowered`] after the plan's own goal: keeping each `(target, per second)` floor
+    /// of [`Goal::Earn`], which then holds the plan's priorities and its currency per second, so
+    /// E-mode is arranged within the most the plan can earn rather than ahead of it.
+    MostPoweredEarning(&'a [(String, f64)]),
+    /// [`Goal::MostPowerDraw`] keeping the same floors.
+    MostPowerDrawEarning(&'a [(String, f64)]),
+}
+
+impl<'a> Goal<'a> {
+    /// The `(target, per second)` floors this goal keeps (see [`Goal::Earn`]).
+    fn floors(&self) -> &'a [(String, f64)] {
+        match *self {
+            Goal::Earn { floors } | Goal::MostPoweredEarning(floors) | Goal::MostPowerDrawEarning(floors) => floors,
+            _ => &[],
+        }
+    }
 }
 
 /// What an RV level-up costs and what's already in stock, as `(item, amount)` with `"coins"` for
@@ -186,6 +217,15 @@ impl LevelUp {
 /// rather than near 1e-6, where a solver's absolute tolerances would swamp it.
 pub const PACE_UNIT: f64 = 86_400.0;
 
+/// A powered recipe with inputs makes at least one batch a day per powered unit: its inputs have a
+/// real source (made in the plan, a byproduct, or level-up stock, all through the item balances),
+/// while it may wait for them the rest of the day. One with no source at all can't be powered.
+const POWERED_BATCH_SECONDS: f64 = PACE_UNIT;
+
+fn has_inputs(recipe: &ProductionItem) -> bool {
+    recipe.raw_materials.as_ref().is_some_and(|inputs| !inputs.is_empty())
+}
+
 /// The weight of coins per second in the level-up stock solve, whose goal is extra level-up items:
 /// enough to sell what would otherwise be left over, nowhere near enough to trade an item for.
 const STOCK_UP_COIN_WEIGHT: f64 = 1e-6;
@@ -202,12 +242,6 @@ pub fn byproducts(items: &[ProductionItem]) -> Vec<String> {
     names
 }
 
-/// Whether a recipe shares its facility's time with the facility's other recipes instead of getting
-/// whole units of its own: level-up materials (sold for nothing), since each tier is made from the
-/// one below on the same Woodworking Bench or Chimney Kiln.
-pub fn takes_turns(recipe: &ProductionItem) -> bool {
-    recipe.sell_currency == "none"
-}
 
 /// The item a recipe makes: a quick variant makes the regular item, and an uncovered crop (see
 /// [`crate::models::add_uncovered_variants`]) makes the same crop, just slower.
@@ -229,6 +263,9 @@ enum VarKind<'a> {
     ElectricBoostUnits(&'a ProductionItem),
     /// Global binary: 1 when the shared Crackle grid is in its 120% boost band.
     ElectricBoostBand,
+    /// With the player's roster, the work an E-mode-capable recipe still leaves its Aniimo once its
+    /// powered units have taken their share; never below zero.
+    WorkerTime,
     Sold(&'a str),
     Pace,
     /// Made beyond what the level-up needs, of one of its costs.
@@ -352,15 +389,17 @@ fn build_model<'a>(
     for &recipe in &recipes {
         let rate = model.add(-seed_cost(recipe), (0.0, f64::INFINITY), false, VarKind::Rate(recipe));
         let max = facility_counts.get_count(&recipe.facility) as f64;
-        let units = model.add(0.0, (0.0, max), !takes_turns(recipe), VarKind::Units(recipe));
+        // Every unit keeps to one recipe (the Woodworking Bench and Chimney Kiln too): whole units.
+        let units = model.add(0.0, (0.0, max), true, VarKind::Units(recipe));
 
         // E-mode power is based on the actual owned facility level, not the recipe unlock level.
         // Example: a Lv.4 Well running Quick Fresh Water is still a Lv.4 Well, so it consumes
         // the same 120W as a Lv.4 Mine; recipe.facility_level (3 for Quick Fresh Water) is only
         // the minimum level required to unlock that recipe.
-        // E-mode is a shared-grid decision. Powered units may use the full generator capacity;
-        // only the subset inside the boost threshold receives the extra 20% throughput.
-        if electric.filter(|p| p.enabled && p.allows_facility(&recipe.facility) && !takes_turns(recipe)).is_some() {
+        // E-mode is a shared-grid decision: the powered units together may draw up to the grid's
+        // limit (see `ElectricConfig::boost_threshold`), and every one of them runs at 120%.
+        // Each powered unit runs its own recipe, kept busy by that recipe alone.
+        if electric.filter(|p| p.enabled && p.allows_facility(&recipe.facility)).is_some() {
             if electric_compatible(&recipe.facility) && electric_require(&recipe.facility, facility_counts.get_level(&recipe.facility)).is_some() {
                 let powered = model.add(0.0, (0.0, max), true, VarKind::ElectricUnits(recipe));
                 let boosted = model.add(0.0, (0.0, max), true, VarKind::ElectricBoostUnits(recipe));
@@ -368,6 +407,15 @@ fn build_model<'a>(
                 model.constrain(vec![(powered, 1.0), (units, -1.0)], ComparisonOp::Le, 0.0);
                 model.constrain(vec![(boosted, 1.0), (powered, -1.0)], ComparisonOp::Le, 0.0);
                 model.constrain(vec![(rate, recipe.production_time), (units, -1.0), (boosted, -0.2)], ComparisonOp::Le, 0.0);
+                // A powered unit keeps its fixed recipe and may wait for inputs: power raises what
+                // it can make (the row above, 120%). What it makes still comes from the plan's own
+                // supply (the item balances below), and with inputs it makes at least a batch a day
+                // (`POWERED_BATCH_SECONDS`), so they must have a source.
+                if has_inputs(recipe) {
+                    // In units of work (rate * t), as the rows above, for the solver's sake.
+                    let t = recipe.production_time;
+                    model.constrain(vec![(rate, t), (powered, -t / POWERED_BATCH_SECONDS)], ComparisonOp::Ge, 0.0);
+                }
                 rate_of.push((recipe, rate));
                 units_of.push((recipe, units));
                 continue;
@@ -395,10 +443,7 @@ fn build_model<'a>(
     }
     // A floor naming a currency ("aniimo_exp", "aniipods") keeps a plan making that much of it
     // while it earns `currency`; those items need sell variables too, worth nothing here.
-    let floor_currencies: Vec<&str> = match goal {
-        Goal::Earn { floors } => floors.iter().map(|(name, _)| name.as_str()).collect(),
-        _ => Vec::new(),
-    };
+    let floor_currencies: Vec<&str> = goal.floors().iter().map(|(name, _)| name.as_str()).collect();
     let mut sold_of: Vec<(usize, &ProductionItem)> = Vec::new();
     for (&item_name, terms) in &mut balance {
         if let Some(&item) = all.get(item_name) {
@@ -416,7 +461,10 @@ fn build_model<'a>(
         Goal::LevelUp(level_up) => Some((level_up, 0.0)),
         // Slack of 0.01% (about 9 seconds a day): `pace` is another solve's maximum, and the pace
         // terms are small enough that a tighter floor sits inside the solver's tolerances.
-        Goal::EarnWhileLevelingUp(level_up, pace) | Goal::StockUp(level_up, pace, _) => Some((level_up, pace * (1.0 - 1e-4))),
+        Goal::EarnWhileLevelingUp(level_up, pace)
+        | Goal::StockUp(level_up, pace, _)
+        | Goal::MostPoweredLevelingUp(level_up, pace)
+        | Goal::MostPowerDrawLevelingUp(level_up, pace) => Some((level_up, pace * (1.0 - 1e-4))),
         _ => None,
     };
     if let Some((level_up, min_pace)) = level_up {
@@ -485,6 +533,18 @@ fn build_model<'a>(
         }
     }
 
+    // Recipes the plan must keep making (see `FacilityCounts::require_units`), e.g. a season's
+    // crops: at least that many units kept working on it, all the time (rate * time per batch),
+    // counting every variant of it. With none the plan could make, nothing can meet it.
+    for (name, units) in facility_counts.required_units() {
+        let work: Vec<(usize, f64)> = rate_of
+            .iter()
+            .filter(|(recipe, _)| crate::models::base_item_name(&recipe.name) == name)
+            .map(|&(recipe, rate)| (rate, recipe.production_time))
+            .collect();
+        model.constrain(work, ComparisonOp::Ge, *units as f64);
+    }
+
     // Shared Crackle grid: every powered unit contributes its full electricRequire.
     // Total E-mode demand may use the full generator capacity. Only the subset inside the
     // boost threshold receives the extra 20% throughput.
@@ -518,12 +578,36 @@ fn build_model<'a>(
             model.constrain(vec![(grid_boost, 1.0)], ComparisonOp::Eq, 1.0);
             model.constrain(demand_terms.clone(), ComparisonOp::Le, power.boost_threshold());
 
+            // The earlier E-mode solves' results (see `Goal::MostPowered`, `Goal::MostPowerDraw`):
+            // whole numbers (whole units, whole watts), so kept exactly, with no slack.
+            if power.min_powered > 0 {
+                let units: Vec<(usize, f64)> = demand_terms.iter().map(|&(v, _)| (v, 1.0)).collect();
+                model.constrain(units, ComparisonOp::Ge, power.min_powered as f64);
+            }
+            if power.min_draw > 0 {
+                model.constrain(demand_terms.clone(), ComparisonOp::Ge, power.min_draw as f64);
+            }
+
             // When boost is ON, boosted == powered for every recipe. When boost is OFF,
             // boosted == 0. This prevents a mixed 120%/100% grid.
             for (powered, boosted, max) in powered_groups {
                 model.constrain(vec![(boosted, 1.0), (powered, -1.0)], ComparisonOp::Le, 0.0);
                 model.constrain(vec![(boosted, 1.0), (grid_boost, -max)], ComparisonOp::Le, 0.0);
-                model.constrain(vec![(boosted, 1.0), (powered, -1.0), (grid_boost, max)], ComparisonOp::Ge, 0.0);
+                // boosted >= powered - max * (1 - grid_boost): with the grid boosted, every
+                // powered unit is boosted; with it off, this row is slack.
+                model.constrain(vec![(boosted, 1.0), (powered, -1.0), (grid_boost, -max)], ComparisonOp::Ge, -max);
+            }
+        }
+        // Manual allocation: the player's Mine and Well counts are kept exactly, never fewer.
+        // (`exact_problem` in wasm.rs checks first that the units, and room on the grid, exist.)
+        for facility in ["Mine", "Well"] {
+            let Some(units) = power.manual_units(facility) else { continue };
+            let powered: Vec<(usize, f64)> = model.kinds.iter().enumerate()
+                .filter(|(_, kind)| matches!(kind, VarKind::ElectricUnits(recipe) if recipe.facility == facility))
+                .map(|(v, _)| (v, 1.0))
+                .collect();
+            if !powered.is_empty() || units > 0 {
+                model.constrain(powered, ComparisonOp::Eq, units as f64);
             }
         }
     }
@@ -654,8 +738,8 @@ fn build_model<'a>(
             .collect()
     };
     match goal {
-        Goal::Earn { floors } => {
-            for (resource, floor) in floors {
+        Goal::Earn { .. } | Goal::MostPoweredEarning(_) | Goal::MostPowerDrawEarning(_) => {
+            for (resource, floor) in goal.floors() {
                 if *floor <= 0.0 {
                     continue;
                 }
@@ -678,7 +762,7 @@ fn build_model<'a>(
             }
             // Maximizing a byproduct (Wood Blocks, Mineral Sand) rather than a currency.
             let byproduct = byproduct_terms(currency);
-            if !byproduct.is_empty() {
+            if matches!(goal, Goal::Earn { .. }) && !byproduct.is_empty() {
                 model.objective.iter_mut().for_each(|c| *c = 0.0);
                 for (v, amount) in byproduct {
                     model.objective[v] += amount;
@@ -691,7 +775,22 @@ fn build_model<'a>(
                 model.objective[v] += amount;
             }
         }
+        Goal::MostPowered | Goal::MostPowerDraw | Goal::MostPoweredLevelingUp(..) | Goal::MostPowerDrawLevelingUp(..) => {}
         Goal::LevelUp(_) | Goal::EarnWhileLevelingUp(..) | Goal::StockUp(..) => {}
+    }
+    // E-mode's own priorities: the most powered units, or the most watts they draw.
+    let power_goal = match goal {
+        Goal::MostPowered | Goal::MostPoweredLevelingUp(..) | Goal::MostPoweredEarning(_) => Some(true),
+        Goal::MostPowerDraw | Goal::MostPowerDrawLevelingUp(..) | Goal::MostPowerDrawEarning(_) => Some(false),
+        _ => None,
+    };
+    if let Some(units) = power_goal {
+        model.objective.iter_mut().for_each(|c| *c = 0.0);
+        for v in 0..model.kinds.len() {
+            let VarKind::ElectricUnits(recipe) = model.kinds[v] else { continue };
+            let Some(watts) = electric_require(&recipe.facility, facility_counts.get_level(&recipe.facility)) else { continue };
+            model.objective[v] = if units { 1.0 } else { watts };
+        }
     }
     // With the player's own Aniimo (see `Crew`), each member's day covers everything it works:
     // a recipe's time per batch at its rate, or at a facility it lives in, the whole day per unit.
@@ -706,14 +805,14 @@ fn build_model<'a>(
         if electric.is_some_and(|p| p.enabled) {
             let mut generator_staffed = Vec::new();
             for (member, aniimo) in crew.members.iter().enumerate() {
-                if aniimo.count == 0 || aniimo.level("Lightning") == 0 {
+                if !can_staff_generator(aniimo) {
                     continue;
                 }
                 let staff = model.add(
                     0.0,
                     (0.0, aniimo.count as f64),
                     true,
-                    VarKind::Staff { building: "Crackle Generator".to_string(), member },
+                    VarKind::Staff { building: GENERATOR_BUILDING.to_string(), member },
                 );
                 generator_staffed.push((staff, 1.0));
                 busy[member].push((staff, 1.0));
@@ -732,9 +831,16 @@ fn build_model<'a>(
                 // 1.2 units of processor capacity, while a non-boosted powered unit contributes
                 // 1.0; only the remaining workload needs an Aniimo.
                 if let Some(&(powered, boosted)) = electric_vars.get(&recipe.name) {
-                    busy[member].push((rate, recipe.production_time));
-                    busy[member].push((powered, -1.0));
-                    busy[member].push((boosted, -0.2));
+                    // left >= rate*t - powered - 0.2*boosted, and left >= 0: powered units take
+                    // only this recipe's own work, so an idle or underused one can't lend the
+                    // Aniimo time for anything else.
+                    let left = model.add(0.0, (0.0, f64::INFINITY), false, VarKind::WorkerTime);
+                    model.constrain(
+                        vec![(left, 1.0), (rate, -recipe.production_time), (powered, 1.0), (boosted, 0.2)],
+                        ComparisonOp::Ge,
+                        0.0,
+                    );
+                    busy[member].push((left, 1.0));
                 } else {
                     busy[member].push((rate, recipe.production_time));
                 }
@@ -1051,10 +1157,6 @@ fn plan_from(model: &Model, value: f64, upper_bound: f64, proven_optimal: bool, 
             VarKind::Rate(recipe) if v > 1e-9 => {
                 recipe_rates.insert(recipe.name.clone(), v);
             }
-            VarKind::Units(recipe) if takes_turns(recipe) && v > 1e-9 => {
-                // The units it runs on at least part of the time.
-                units.insert(recipe.name.clone(), ((v - 1e-6).ceil().max(1.0)) as u32);
-            }
             VarKind::Units(recipe) if v > 0.5 => {
                 units.insert(recipe.name.clone(), v.round() as u32);
             }
@@ -1100,8 +1202,9 @@ fn plan_from(model: &Model, value: f64, upper_bound: f64, proven_optimal: bool, 
             _ => {}
         }
     }
-    // Units set to a recipe that doesn't run are just idle.
-    units.retain(|name, _| recipe_rates.contains_key(name));
+    // Units set to a recipe that doesn't run are just idle, unless powered: a powered unit keeps
+    // its fixed recipe while it waits for inputs.
+    units.retain(|name, _| recipe_rates.contains_key(name) || electric_units.contains_key(name));
     let rate_per_second = model.earnings.iter().zip(values).map(|(c, v)| c * v).sum();
     ExactPlan {
         rate_per_second,
@@ -1148,7 +1251,7 @@ pub fn check_plan_with_power(
     let mut earned = 0.0;
     let mut made: HashMap<&str, f64> = HashMap::new();
     let mut plots_needing: HashMap<(&str, &str), u32> = HashMap::new();
-    // Units in use per facility and level; a recipe taking turns counts only its share of time.
+    // Units in use per facility and level: every unit keeps to one recipe.
     let mut units_at: HashMap<&str, Vec<(u32, f64)>> = HashMap::new();
     for (name, &rate) in &plan.recipe_rates {
         let recipe = all.get(name.as_str()).ok_or(format!("unknown recipe {name}"))?;
@@ -1172,7 +1275,8 @@ pub fn check_plan_with_power(
         if rate * recipe.production_time > capacity + TOLERANCE {
             return Err(format!("{name} runs {rate}/s but has {units} units ({powered} powered) at {}s each", recipe.production_time));
         }
-        let in_use = if takes_turns(recipe) { rate * recipe.production_time } else { units as f64 };
+        // Every unit keeps to one recipe: its whole units are in use.
+        let in_use = units as f64;
         units_at.entry(recipe.facility.as_str()).or_default().push((recipe.facility_level, in_use));
         if let Some(environment) = recipe.environment.as_deref() {
             *plots_needing.entry((recipe.facility.as_str(), environment)).or_default() += units;
@@ -1226,6 +1330,31 @@ pub fn check_plan_with_power(
             }
         }
     }
+    // Recipes the plan must keep making (see `FacilityCounts::require_units`).
+    for (name, units) in facility_counts.required_units() {
+        let work: f64 = plan
+            .recipe_rates
+            .iter()
+            .filter(|(recipe, _)| crate::models::base_item_name(recipe) == name)
+            .filter_map(|(recipe, &rate)| all.get(recipe.as_str()).map(|item| rate * item.production_time))
+            .sum();
+        if work < *units as f64 - TOLERANCE {
+            return Err(format!("{name} must keep {units} units working but keeps {work:.4}"));
+        }
+    }
+    // A powered unit needs a unit of its own recipe (it may wait for inputs; see `build_model`).
+    if let Some((name, powered)) = plan.electric_units.iter().find(|(name, &p)| p > plan.units.get(*name).copied().unwrap_or(0)) {
+        return Err(format!("{name} has {powered} powered units but only {} units", plan.units.get(name).copied().unwrap_or(0)));
+    }
+    // As in `build_model`: a powered recipe with inputs makes at least a batch a day per powered
+    // unit, from inputs the balances above already traced to a source.
+    for (name, &powered) in &plan.electric_units {
+        let Some(recipe) = all.get(name.as_str()).filter(|r| has_inputs(r)) else { continue };
+        let batches = plan.recipe_rates.get(name).copied().unwrap_or(0.0) * POWERED_BATCH_SECONDS;
+        if powered > 0 && batches < powered as f64 - TOLERANCE {
+            return Err(format!("{} has {powered} powered units but makes {batches:.4} batches a day from its inputs", recipe.name));
+        }
+    }
     if let Some(power) = electric.filter(|p| p.enabled) {
         let demand: f64 = plan.electric_units.iter().filter_map(|(name, &units)| {
             let recipe = all.get(name.as_str())?;
@@ -1233,6 +1362,20 @@ pub fn check_plan_with_power(
         }).sum();
         if demand > power.capacity() + TOLERANCE {
             return Err(format!("Crackle E-mode demand {demand:.3} exceeds generator capacity {}", power.capacity()));
+        }
+        // Every powered unit is credited 120% above, which holds only up to the grid's limit.
+        if demand > power.boost_threshold() + TOLERANCE {
+            return Err(format!("Crackle E-mode demand {demand:.3} exceeds the 120% limit {:.3}", power.boost_threshold()));
+        }
+        for facility in ["Mine", "Well"] {
+            let Some(units) = power.manual_units(facility) else { continue };
+            let powered: u32 = plan.electric_units.iter()
+                .filter(|(name, _)| all.get(name.as_str()).is_some_and(|recipe| recipe.facility == facility))
+                .map(|(_, &u)| u)
+                .sum();
+            if powered != units {
+                return Err(format!("{facility} must have {units} powered units but has {powered}"));
+            }
         }
     } else if !plan.electric_units.is_empty() {
         return Err("plan contains powered units without an enabled Crackle Generator".to_string());
@@ -1280,18 +1423,39 @@ pub fn check_plan_with_power(
             *slot += if crew.residents.contains(&recipe.facility) {
                 plan.units.get(name).copied().unwrap_or(0) as f64
             } else {
-                rate * recipe.production_time
+                // As in `build_model`: each powered unit takes up to 1.2 units of this recipe's
+                // own work (boosted == powered while the grid is boosted), never more than the
+                // recipe has, so it lends the Aniimo nothing for other work.
+                let powered_units = plan.electric_units.get(name).copied().unwrap_or(0) as f64;
+                (rate * recipe.production_time - 1.2 * powered_units).max(0.0)
             };
         }
         let mut staffed: HashMap<&str, f64> = HashMap::new();
+        let powered = electric.is_some_and(|p| p.enabled);
         for (building, member, share) in &plan.staffing {
             let aniimo = crew.members.get(*member).ok_or(format!("{building} staffed by roster member {member}, who isn't there"))?;
-            let ability = crew.environment.get(building).ok_or(format!("{building} needs no Aniimo"))?;
-            if aniimo.level(ability) == 0 {
-                return Err(format!("{building} staffed by roster member {member}, who has no {ability}"));
+            if building == GENERATOR_BUILDING {
+                // The grid's own worker (see `build_model`): a Lightning Aniimo, only with E-mode on.
+                if !powered {
+                    return Err(format!("{building} staffed while E-mode is off"));
+                }
+                if !can_staff_generator(aniimo) {
+                    return Err(format!("{building} staffed by roster member {member}, who has no {GENERATOR_ABILITY}"));
+                }
+            } else {
+                let ability = crew.environment.get(building).ok_or(format!("{building} needs no Aniimo"))?;
+                if aniimo.level(ability) == 0 {
+                    return Err(format!("{building} staffed by roster member {member}, who has no {ability}"));
+                }
             }
             busy[*member] += share;
             *staffed.entry(building.as_str()).or_default() += share;
+        }
+        if powered {
+            let have = staffed.get(GENERATOR_BUILDING).copied().unwrap_or(0.0);
+            if have < 1.0 - TOLERANCE {
+                return Err(format!("{GENERATOR_BUILDING} needs a full-time {GENERATOR_ABILITY} Aniimo but has {have}"));
+            }
         }
         for (&building, &used) in &buildings_used {
             let have = staffed.get(building).copied().unwrap_or(0.0);
@@ -1662,20 +1826,11 @@ pub fn to_production_plan(
             });
             continue;
         }
-        // Recipes taking turns share units, so what's in use is their combined time.
-        let shared: Vec<&str> = rows.iter().filter(|(r, _, _)| takes_turns(r)).map(|(r, _, _)| r.name.as_str()).collect();
-        let shared_time: f64 = rows.iter().filter(|(r, _, _)| takes_turns(r)).map(|(r, _, rate)| rate * r.production_time).sum();
-        let used: u32 = rows.iter().filter(|(r, _, _)| !takes_turns(r)).map(|(_, u, _)| u).sum::<u32>()
-            + ((shared_time - 1e-6).ceil().max(0.0) as u32);
+        // Every unit keeps to one recipe, so the units in use are the recipes' own.
+        let used: u32 = rows.iter().map(|(_, u, _)| u).sum::<u32>();
         let used = used.min(owned);
         for (recipe, units, rate) in rows {
             let mut reason = uses_of(recipe);
-            if takes_turns(recipe) {
-                let others: Vec<&str> = shared.iter().copied().filter(|n| *n != recipe.name).collect();
-                if !others.is_empty() {
-                    reason = format!("{reason}; takes turns with {}", others.join(", "));
-                }
-            }
             if recipe.name.ends_with(crate::models::UNCOVERED_SUFFIX) {
                 let base = all.get(crate::models::base_item_name(&recipe.name)).and_then(|i| i.environment.as_deref());
                 let speed = base.and_then(crate::models::uncovered_efficiency).unwrap_or(1.0) * 100.0;

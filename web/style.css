@@ -2982,6 +2982,28 @@ tr:hover .skip-row,
 }
 .electric-strategy-tabs label:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 
+/* Mine/Well power allocation: auto or manual, and in manual mode one box per facility, its switch
+   on the first line and its count below. Kept apart from .input-field, whose block labels would
+   flatten the switch. */
+.electric-allocation { margin-top: .85rem; padding-top: .85rem; border-top: 1px solid var(--border); }
+.electric-allocation h4 { margin: 0 0 .55rem; }
+.electric-allocation .tabs { display: flex; flex-wrap: wrap; width: fit-content; max-width: 100%; margin-bottom: .75rem; }
+.electric-manual-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: .75rem; margin-bottom: .5rem;
+}
+.electric-manual-grid[hidden] { display: none; }
+.electric-manual-item {
+    display: flex; flex-direction: column; align-items: stretch; gap: .5rem; min-width: 0;
+    padding: .65rem .75rem; border: 1px solid var(--border); border-radius: 8px;
+}
+.electric-manual-item .priority-switch { align-self: flex-start; font-size: .85rem; color: var(--text); }
+.electric-manual-item select {
+    width: 100%; padding: .5rem .65rem; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font: inherit; font-size: .9rem; cursor: pointer;
+}
+.electric-manual-item select:focus { outline: none; border-color: var(--accent); }
+
 .electric-layout-head { display:flex; justify-content:space-between; gap:1rem; align-items:baseline; margin-bottom:.7rem; }
 .electric-layout-wrap { display:grid; grid-template-columns:minmax(280px, 520px) 1fr; gap:1rem; align-items:start; }
 .electric-grid {

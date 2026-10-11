@@ -59,7 +59,7 @@ export const FACILITIES = [
     {
         name: 'Nimbus Bed', slug: 'nimbus-bed', defaultCount: 0, category: 'Aniimo Materials', hasWorker: true, ability: 'Leisure', personality: 'Judicious',
         unlocks: { 1: 10, 2: 13, 3: 16 },
-        counts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2],
+        counts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
         tooltip: "Lv.1: Wool&#10;Lv.2: Quick Wool&#10;Lv.3: Petals"
     },
     {
@@ -205,9 +205,15 @@ export const SEASON = {
     // Recipes unlocked with Recipe Notes; plans only use the ones the player ticks. The season's
     // other recipes come unlocked.
     recipeNotes: [
-        { name: 'harvest_platter' },
         { name: 'umbral_pickle' },
         { name: 'umbral_hot_pot' },
+    ],
+    // While the festival is on, its two processing candidates are always weighed against each other
+    // (the plan takes whichever earns more per hour from what the homeland can supply), and both of
+    // its crops, Moondew Radish and Waxing Moon Pepper, are grown on at least one plot each (see
+    // `SEASON_CROPS` in src/wasm.rs).
+    candidates: [
+        { name: 'harvest_platter' },
         { name: 'umbral_sweet_and_spicy_sauce' },
     ],
 };
